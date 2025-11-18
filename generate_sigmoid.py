@@ -57,8 +57,8 @@ use ieee.fixed_pkg.all;
         constant INDEX_HIGH : integer := {high_bit};
         constant INDEX_LOW : integer := {low_bit};
         constant INDEX_WIDTH : integer := INDEX_HIGH - INDEX_LOW + 1;
-        constant INPUT_MAX : real := {config.input_range[0]};
-        constant INPUT_MIN : real := {config.input_range[1]};
+        constant INPUT_MAX : real := {config.input_range[1]};
+        constant INPUT_MIN : real := {config.input_range[0]};
 
         type sigmoid_lut_type is array(0 to LUT_SIZE - 1) of real;
 
@@ -113,8 +113,6 @@ begin
 end architecture relu;
 
 architecture sigmoid of activation_func is
-    constant HIGH_BITS : integer := {high_bit};
-    constant LOW_BITS : integer := {low_bit};
     signal input_sfixed : sfixed(input_width / 2 - 1 downto - (input_width / 2));
 """
 
@@ -124,6 +122,7 @@ architecture sigmoid of activation_func is
 
     vhdl_code += f"""    signal lut_index : integer range 0 to LUT_SIZE - 1;
     signal sigmoid_value : real;
+    signal input_real : real;
     signal clipped : real;
     signal normalized : real;
 

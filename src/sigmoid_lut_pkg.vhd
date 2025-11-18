@@ -1043,4 +1043,4 @@ use ieee.fixed_pkg.all;
         );
 
 end package sigmoid_lut_pkg;
-
+    

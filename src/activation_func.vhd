@@ -24,9 +24,9 @@ end architecture relu;
 
 architecture sigmoid of activation_func is
     signal input_sfixed : sfixed(input_width / 2 - 1 downto - (input_width / 2));
-    signal input_real : real;
     signal lut_index : integer range 0 to LUT_SIZE - 1;
     signal sigmoid_value : real;
+    signal input_real : real;
     signal clipped : real;
     signal normalized : real;
 
@@ -36,12 +36,13 @@ begin
     input_real <= to_real(input_sfixed);
     clipped <= INPUT_MAX when input_real > INPUT_MAX else INPUT_MIN when input_real < INPUT_MIN else input_real;
     normalized <= ((clipped - INPUT_MIN)/(INPUT_MAX - INPUT_MIN));
+
     -- Extract middle bits for LUT indexing (10 bits from input)
     -- Using bits 4 downto -5
-    --lut_index <= to_integer(unsigned(std_logic_vector(input_sfixed(HIGH_BITS - 1 downto LOW_BITS))));
     lut_index <= 0 when (normalized  < 0.0)
                  else (LUT_SIZE - 1) when (normalized > 1.0)
                  else integer(normalized * real(LUT_SIZE - 1));
+
 
     -- Lookup sigmoid value from LUT
     sigmoid_value <= SIGMOID_LUT(lut_index);

@@ -41,7 +41,7 @@ begin
     n_adders_gen : for i in 1 to size - 1 generate
         n_adder_inst: entity work.n_bit_adder
         generic map(
-                       size => data_width + data_width
+                       size => data_width + size
                    )
         port map(
             a => result_sigs(i - 1),
