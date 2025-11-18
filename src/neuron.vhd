@@ -18,7 +18,7 @@ entity neuron is
         -- Weights: array of weights (num_inputs weights + 1 bias)
         -- weights_i(0 to num_inputs-1) are weights for inputs
         -- weights_i(num_inputs) is the bias
-        weights_i : in std_logic_bus_array(num_inputs downto 0)(data_width - 1 downto 0);
+        weights_i : in std_logic_bus_array(0 to num_inputs)(data_width - 1 downto 0);
 
         -- Output: activated result
         output_o : out std_logic_vector(data_width - 1 downto 0);
@@ -29,46 +29,28 @@ entity neuron is
 end entity neuron;
 
 architecture rtl of neuron is
-    -- Calculate accumulator size
-    -- For num_inputs multiplications + bias: need num_inputs + 1 values to accumulate
-    constant ACC_SIZE : integer := num_inputs + 1;
-    constant MULT_OUTPUT_WIDTH : integer := 2 * data_width;  -- Multiplier output width
+    -- 2 * data_width + num_inputs
 
-    -- According to acc.vhd: sum_o is (size + data_width - 1 downto 0)
-    -- where size = ACC_SIZE and data_width parameter in acc = MULT_OUTPUT_WIDTH
-    constant ACC_OUTPUT_WIDTH : integer := ACC_SIZE + MULT_OUTPUT_WIDTH;
+    type sfixed_vector_array is array (integer range<>) of sfixed((2*data_width + 1) / 2 - 1 downto -(2*data_width / 2));
 
-    -- Multiplication results (input * weight)
-    signal mult_results : std_logic_bus_array(num_inputs - 1 downto 0)(MULT_OUTPUT_WIDTH - 1 downto 0);
+    signal mult_results : sfixed_vector_array(num_inputs downto 0);
 
     -- Accumulator inputs (mult results + bias)
-    signal acc_inputs : std_logic_bus_array(ACC_SIZE - 1 downto 0)(MULT_OUTPUT_WIDTH - 1 downto 0);
+    signal acc_inputs : std_logic_bus_array(num_inputs downto 0)((2 * data_width) - 1 downto 0);
 
     -- Accumulator output
-    signal acc_sum : std_logic_vector(ACC_OUTPUT_WIDTH - 1 downto 0);
+    signal acc_sum : std_logic_vector((2*data_width) + num_inputs downto 0);
     signal acc_overflow : std_logic;
 
-    -- Activation function signals
-    -- We need to resize the accumulator output to match activation function input expectations
-    -- The activation function expects input_width bits (default 48 for your config)
-    constant ACTIVATION_INPUT_WIDTH : integer := ACC_OUTPUT_WIDTH;  -- Matches your sigmoid LUT config
-    signal activation_input : std_logic_vector(ACTIVATION_INPUT_WIDTH - 1 downto 0);
-    signal activation_output : sfixed(data_width / 2 - 1 downto -(data_width / 2));
+    signal activation_input : std_logic_vector((2*data_width) + num_inputs downto 0);
+    signal activation_output : sfixed((data_width + 1) / 2 - 1 downto -(data_width / 2));
 
 begin
     -- ========================================================================
     -- Step 1: Multiply inputs by weights
     -- ========================================================================
     mult_gen : for i in 0 to num_inputs - 1 generate
-        mult_inst : entity work.mult
-            generic map(
-                data_width => data_width
-            )
-            port map(
-                a_i => inputs_i(i),
-                b_i => weights_i(i),
-                product_o => mult_results(i)
-            );
+        mult_results(i) <= resize(to_sfixed(inputs_i(i),(data_width + 1) / 2 - 1, -(data_width / 2)) * to_sfixed(weights_i(i), (data_width + 1) / 2 - 1, -(data_width / 2)), mult_results(i)'high, mult_results(i)'low);
     end generate mult_gen;
 
     -- ========================================================================
@@ -76,14 +58,14 @@ begin
     -- ========================================================================
     -- First num_inputs entries are multiplication results
     acc_input_assign : for i in 0 to num_inputs - 1 generate
-        acc_inputs(i) <= mult_results(i);
+        acc_inputs(i) <= to_slv(mult_results(i));
     end generate acc_input_assign;
 
     -- Last entry is the bias (sign-extended to match width)
     bias_extend : process(weights_i)
     begin
         -- Sign extend bias to MULT_OUTPUT_WIDTH
-        acc_inputs(num_inputs)(MULT_OUTPUT_WIDTH - 1 downto data_width) <=
+        acc_inputs(num_inputs)((2*data_width) - 1 downto data_width) <=
             (others => weights_i(num_inputs)(data_width - 1));  -- Sign bit
         acc_inputs(num_inputs)(data_width - 1 downto 0) <=
             weights_i(num_inputs);
@@ -94,8 +76,8 @@ begin
     -- ========================================================================
     accumulator_inst : entity work.acc
         generic map(
-            size => ACC_SIZE,
-            data_width => MULT_OUTPUT_WIDTH,
+            size => num_inputs + 1,
+            data_width => 2 * data_width,
             signed_acc => true  -- We're working with signed values
         )
         port map(
@@ -129,12 +111,13 @@ begin
     -- ========================================================================
     -- Step 4: Apply activation function
     -- ========================================================================
+    activation_input <= acc_sum;
 
     -- Choose activation function based on generic
     sigmoid_gen : if use_sigmoid generate
         activation_inst : entity work.activation_func(sigmoid)
             generic map(
-                input_width => ACTIVATION_INPUT_WIDTH,
+                input_width => (2*data_width) + num_inputs + 1,
                 output_width => data_width
             )
             port map(
@@ -146,7 +129,7 @@ begin
     relu_gen : if not use_sigmoid generate
         activation_inst : entity work.activation_func(relu)
             generic map(
-                input_width => ACTIVATION_INPUT_WIDTH,
+                input_width => (2*data_width) + num_inputs + 1,
                 output_width => data_width
             )
             port map(
