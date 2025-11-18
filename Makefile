@@ -1,8 +1,10 @@
 # vhdl files
 FILES =	src/types.vhd 		\
+		src/sigmoid_lut_pkg.vhd 		\
 		src/half_adder.vhd 	\
 		src/full_adder.vhd 	\
 		src/n_bit_adder.vhd \
+		src/activation_func.vhd 		\
 		src/acc.vhd \
 
 

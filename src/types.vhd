@@ -20,7 +20,6 @@ package types is
 
     function to_sfixed_a(arg: integer) return unresolved_sfixed;
     function to_sfixed_a(arg: real) return unresolved_sfixed;
-    function to_sfixed(arg: std_logic_vector; left_index : integer; right_index : integer) return unresolved_sfixed;
     function to_real(arg: sfixed_bus_array) return real_array;
 
 end package types;
@@ -35,15 +34,6 @@ package body types is
                 right_index => -frac_s);
         return result;
     end function to_sfixed_a;
-    function to_sfixed(arg: std_logic_vector; left_index : integer; right_index : integer) return unresolved_sfixed is
-        variable result : unresolved_sfixed(int_s - 1 downto -frac_s);
-    begin
-        result := to_sfixed(
-                arg => arg,
-                left_index => right_index,
-                right_index => -left_index);
-        return result;
-    end function to_sfixed;
     function to_sfixed_a(arg: real) return unresolved_sfixed is
         variable result : unresolved_sfixed(int_s - 1 downto -frac_s);
     begin
