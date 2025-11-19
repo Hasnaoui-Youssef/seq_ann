@@ -6,8 +6,8 @@ FILES =	src/types.vhd 					\
 		src/n_bit_adder.vhd 			\
 		src/activation_func.vhd 		\
 		src/acc.vhd 					\
-		src/signed_mult.vhd 			\
-		src/neuron.vhd
+		src/neuron.vhd					\
+		src/layer.vhd					#\
 
 
 # testbench

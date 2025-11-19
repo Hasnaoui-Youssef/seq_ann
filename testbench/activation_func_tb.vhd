@@ -14,24 +14,12 @@ architecture testbench of activation_func_tb is
     constant INPUT_WIDTH_C : integer := 48;
     constant OUTPUT_WIDTH_C : integer := 32;
 
-    -- Component declaration
-    component activation_func is
-        generic(
-            input_width : integer := INPUT_WIDTH_C;
-            output_width : integer := OUTPUT_WIDTH_C
-        );
-        port(
-            input_i : in std_logic_vector(input_width / 2 - 1 downto -(input_width / 2));
-            output_o : out sfixed(output_width / 2 - 1 downto -(output_width / 2))
-        );
-    end component;
-
     -- Test signals (std_logic_vector uses natural range)
     signal input_s : std_logic_vector(INPUT_WIDTH_C - 1 downto 0);
-    signal output_s : sfixed(OUTPUT_WIDTH_C / 2 - 1 downto -(OUTPUT_WIDTH_C / 2));
+    signal output_s : sfixed((OUTPUT_WIDTH_C + 1)/ 2 - 1 downto -(OUTPUT_WIDTH_C / 2));
 
     -- Helper signals
-    signal input_sfixed : sfixed(INPUT_WIDTH_C / 2 - 1 downto -(INPUT_WIDTH_C / 2));
+    signal input_sfixed : sfixed((INPUT_WIDTH_C + 1) / 2 - 1 downto -(INPUT_WIDTH_C / 2));
     signal input_real : real;
     signal output_real : real;
 

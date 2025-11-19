@@ -4,6 +4,7 @@ import math
 import argparse
 from pathlib import Path
 
+
 class SigmoidConfig:
     def __init__(self, lut_size=256, input_width=48, output_width=32, num_test_inputs=16, input_range=(-8.0, 8.0)):
         self.lut_size = lut_size
@@ -113,14 +114,14 @@ begin
 end architecture relu;
 
 architecture sigmoid of activation_func is
-    signal input_sfixed : sfixed(input_width / 2 - 1 downto - (input_width / 2));
+    signal input_sfixed : sfixed((input_width + 1) / 2 - 1 downto - (input_width / 2));
 """
 
     if needs_padding:
-        vhdl_code += f"""    signal index_bits_padded : sfixed(LUT_BITS/2 - 1 downto -(LUT_BITS/2));
+        vhdl_code += """    signal index_bits_padded : sfixed((LUT_BITS + 1)/2 - 1 downto -(LUT_BITS/2));
 """
 
-    vhdl_code += f"""    signal lut_index : integer range 0 to LUT_SIZE - 1;
+    vhdl_code += """    signal lut_index : integer range 0 to LUT_SIZE - 1;
     signal sigmoid_value : real;
     signal input_real : real;
     signal clipped : real;
@@ -136,7 +137,6 @@ begin
 """
 
     vhdl_code += f"""    -- Extract middle bits for LUT indexing ({config.lut_bits} bits from input)
-    -- Using bits {high_bit} downto {low_bit}
     lut_index <= 0 when (normalized  < 0.0)
                  else (LUT_SIZE - 1) when (normalized > 1.0)
                  else integer(normalized * real(LUT_SIZE - 1));
@@ -159,7 +159,7 @@ end architecture sigmoid;
     print(f"Generated activation function VHDL: {output_file}")
     return output_file
 
-def generate_testbench(config, lut, output_file="testbench/activation_func_tb.vhd"):
+def generate_activation_func_testbench(config, lut, tolerance, output_file="testbench/activation_func_tb.vhd"):
     """Generate VHDL testbench for sigmoid activation function"""
 
     # Generate test vectors
@@ -236,7 +236,7 @@ architecture testbench of activation_func_tb is
 
     vhdl_code += f"""    );
 
-    constant TOLERANCE : real := 0.01;  -- 1% tolerance for comparison
+    constant TOLERANCE : real := {tolerance};  -- {tolerance * 100}% tolerance for comparison
 
 begin
     -- DUT instantiation (sigmoid architecture)
@@ -367,8 +367,12 @@ def main():
                         help='Minimum input value (default: -8.0)')
     parser.add_argument('--input-max', type=float, default=8.0,
                         help='Maximum input value (default: 8.0)')
+    parser.add_argument('--test-tolerance', type=float, default=0.1,
+                        help='Accuracy of test results (default : 0.1)')
 
     args = parser.parse_args()
+
+    test_tolerance = args.test_tolerance
 
     # Create configuration
     config = SigmoidConfig(
@@ -407,7 +411,7 @@ def main():
 
     # Generate testbench
     print("\n[4/4] Generating testbench...")
-    generate_testbench(config, lut)
+    generate_activation_func_testbench(config, lut, test_tolerance)
 
     # Update Makefile
     print("\n[5/4] Updating Makefile...")

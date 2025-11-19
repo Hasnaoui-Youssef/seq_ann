@@ -8,7 +8,9 @@ package types is
     constant width : integer := 16;
 
     subtype std_logic_bus is std_logic_vector(width - 1 downto 0);
-    type std_logic_bus_array is array (integer range<>) of std_logic_vector;
+    type std_logic_bus_array is array (integer range<>) of std_logic_vector; -- for neuron weights and inputs
+    type weights_matrix is array (integer range<>) of std_logic_bus_array; -- for layer weights
+    type weights_tensor is array (integer range<>) of weights_matrix; -- for network weights
 
     constant int_s : integer := 16;
     constant frac_s : integer := 16;
