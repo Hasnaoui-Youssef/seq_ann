@@ -10,16 +10,25 @@ entity activation_func_tb is
 end entity activation_func_tb;
 
 architecture testbench of activation_func_tb is
-    -- Configuration constants
-    constant INPUT_WIDTH_C : integer := 48;
-    constant OUTPUT_WIDTH_C : integer := 32;
+    -- Component declaration
+    component activation_func is
+        generic(
+            input_width : integer := 32;
+            input_frac_width : integer := 16;
+            output_width : integer := 32
+        );
+        port(
+            input_i : in std_logic_vector(input_width - 1 downto 0);
+            output_o : out sfixed((output_width + 1) / 2 - 1 downto - (output_width / 2))
+        );
+    end component;
 
-    -- Test signals (std_logic_vector uses natural range)
-    signal input_s : std_logic_vector(INPUT_WIDTH_C - 1 downto 0);
-    signal output_s : sfixed((OUTPUT_WIDTH_C + 1)/ 2 - 1 downto -(OUTPUT_WIDTH_C / 2));
+    -- Test signals
+    signal input_s : std_logic_vector(32 - 1 downto 0);
+    signal output_s : sfixed(15 downto -16);
 
     -- Helper signals
-    signal input_sfixed : sfixed((INPUT_WIDTH_C + 1) / 2 - 1 downto -(INPUT_WIDTH_C / 2));
+    signal input_sfixed : sfixed(15 downto -16);
     signal input_real : real;
     signal output_real : real;
 
@@ -73,8 +82,9 @@ begin
     -- DUT instantiation (sigmoid architecture)
     dut: entity work.activation_func(sigmoid)
         generic map(
-            input_width => INPUT_WIDTH_C,
-            output_width => OUTPUT_WIDTH_C
+            input_width => 32,
+            input_frac_width => 16,
+            output_width => 32
         )
         port map(
             input_i => input_s,
@@ -82,7 +92,7 @@ begin
         );
 
     -- Convert signals for monitoring
-    input_sfixed <= to_sfixed(input_s, input_sfixed'high, input_sfixed'low);
+    input_sfixed <= to_sfixed(input_s, input_sfixed);
     input_real <= to_real(input_sfixed);
     output_real <= to_real(output_s);
 
@@ -95,14 +105,14 @@ begin
         report "========================================";
         report "Starting Sigmoid Activation Function Test";
         report "LUT Size: " & integer'image(LUT_SIZE);
-        report "Input Width: " & integer'image(INPUT_WIDTH_C);
-        report "Output Width: " & integer'image(OUTPUT_WIDTH_C);
+        report "Input Width: " & integer'image(32);
+        report "Output Width: " & integer'image(32);
         report "========================================";
 
         -- Run tests
         for i in 0 to NUM_TESTS - 1 loop
             -- Set input
-            input_s <= to_slv(to_sfixed(TEST_INPUTS(i), input_sfixed'high, input_sfixed'low));
+            input_s <= to_slv(to_sfixed(TEST_INPUTS(i), input_sfixed));
 
             -- Wait for computation
             wait for 10 ns;

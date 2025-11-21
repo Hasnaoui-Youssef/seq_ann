@@ -11,8 +11,9 @@ end entity neuron_tb;
 
 architecture testbench of neuron_tb is
     constant NUM_INPUTS_C : integer := 4;
-    constant DATA_WIDTH_C : integer := 16;
+    constant DATA_WIDTH_C : integer := 32;
     constant USE_SIGMOID_C : boolean := true;
+    constant TOLERANCE_C : real := 0.023438;
 
     signal inputs_s : std_logic_bus_array(NUM_INPUTS_C - 1 downto 0)(DATA_WIDTH_C - 1 downto 0);
     signal weights_s : std_logic_bus_array(NUM_INPUTS_C downto 0)(DATA_WIDTH_C - 1 downto 0);
@@ -132,6 +133,7 @@ begin
         else
             report "Activation: ReLU";
         end if;
+        report "Tolerance: " & real'image(TOLERANCE_C);
         report "========================================";
 
         -- Run test cases
@@ -162,7 +164,7 @@ begin
             if USE_SIGMOID_C then
                 -- Sigmoid activation
                 expected_sigmoid := 1.0 / (1.0 + 2.718281828459 ** (-TEST_CASES(test_idx).expected_sum));
-                test_pass := abs(output_real - expected_sigmoid) < 0.07;  -- 5% tolerance
+                test_pass := abs(output_real - expected_sigmoid) < TOLERANCE_C;
 
                 report "  Expected sum: " & real'image(TEST_CASES(test_idx).expected_sum);
                 report "  Expected sigmoid: " & real'image(expected_sigmoid);

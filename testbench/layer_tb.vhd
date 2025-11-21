@@ -12,8 +12,9 @@ architecture testbench of layer_tb is
     -- Test 1 configuration: Single layer (4 inputs -> 2 outputs)
     constant NUM_INPUTS_1 : integer := 4;
     constant NUM_OUTPUTS_1 : integer := 2;
-    constant DATA_WIDTH_C : integer := 16;
+    constant DATA_WIDTH_C : integer := 32;
     constant USE_SIGMOID_C : boolean := true;
+    constant TOLERANCE_C : real := 0.031250;
 
     -- Test 2 configuration: Two layers (4 -> 2 -> 1)
     constant NUM_INPUTS_2 : integer := 4;
@@ -41,6 +42,7 @@ architecture testbench of layer_tb is
     signal output_2_layer2 : std_logic_bus_array(0 to NUM_OUTPUTS_3 - 1)(DATA_WIDTH_C - 1 downto 0);
 
     -- Helper signals for monitoring (convert to real for display)
+    type real_array is array (integer range <>) of real;
     type real_array_2d is array (integer range<>, integer range<>) of real;
     signal inputs_1_real : real_array(NUM_INPUTS_1 - 1 downto 0);
     signal output_1_real : real_array(0 to NUM_OUTPUTS_1 - 1);
@@ -77,6 +79,10 @@ begin
             clk => clk,
             inputs_i => inputs_1,
             weights_matrix_i => weights_1,
+            load_enable => '0',
+            neuron_select => 0,
+            weight_data => (others => '0'),
+            weight_index => 0,
             output_o => output_1
         );
 
@@ -94,6 +100,10 @@ begin
             clk => clk,
             inputs_i => inputs_2_layer1,
             weights_matrix_i => weights_2_layer1,
+            load_enable => '0',
+            neuron_select => 0,
+            weight_data => (others => '0'),
+            weight_index => 0,
             output_o => output_2_layer1
         );
 
@@ -108,6 +118,10 @@ begin
             clk => clk,
             inputs_i => output_2_layer1,
             weights_matrix_i => weights_2_layer2,
+            load_enable => '0',
+            neuron_select => 0,
+            weight_data => (others => '0'),
+            weight_index => 0,
             output_o => output_2_layer2
         );
 
@@ -151,11 +165,15 @@ begin
     test_proc: process
         variable input_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
         variable weight_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
+        variable pass_count : integer := 0;
+        variable fail_count : integer := 0;
+        variable total_tests : integer := 0;
     begin
         report "========================================";
         report "Starting Layer Testbench";
         report "Data Width: " & integer'image(DATA_WIDTH_C);
         report "Activation: Sigmoid";
+        report "Tolerance: " & real'image(TOLERANCE_C);
         report "========================================";
 
         -- ====================================================================
@@ -225,8 +243,26 @@ begin
         wait for CLK_PERIOD / 4;  -- Wait a bit into the cycle for signals to settle
 
         report "Test 1 Output:";
-        report "  Output[0] = " & real'image(output_1_real(0));
-        report "  Output[1] = " & real'image(output_1_real(1));
+        report "  Output[0] = " & real'image(output_1_real(0)) & " (Expected: 0.874077)";
+        report "  Output[1] = " & real'image(output_1_real(1)) & " (Expected: 0.679179)";
+        
+        total_tests := total_tests + 2;
+        
+        if abs(output_1_real(0) - 0.874077) < TOLERANCE_C then
+            pass_count := pass_count + 1;
+            report "  Output[0] PASS";
+        else
+            fail_count := fail_count + 1;
+            report "  Output[0] FAIL";
+        end if;
+
+        if abs(output_1_real(1) - 0.679179) < TOLERANCE_C then
+            pass_count := pass_count + 1;
+            report "  Output[1] PASS";
+        else
+            fail_count := fail_count + 1;
+            report "  Output[1] FAIL";
+        end if;
 
         wait for CLK_PERIOD * 2;
 
@@ -307,15 +343,24 @@ begin
         wait until rising_edge(clk);
         wait until rising_edge(clk);
         report "After 2 cycles - Layer 1 output:";
-        report "  Layer1 Output[0] = " & real'image(output_2_layer1_real(0));
-        report "  Layer1 Output[1] = " & real'image(output_2_layer1_real(1));
+        report "  Layer1 Output[0] = " & real'image(output_2_layer1_real(0)) & " (Expected: 0.880797)";
+        report "  Layer1 Output[1] = " & real'image(output_2_layer1_real(1)) & " (Expected: 0.604679)";
 
         wait until rising_edge(clk);
         wait until rising_edge(clk);
         wait for CLK_PERIOD / 4;  -- Wait a bit into the cycle for signals to settle
 
         report "After 4 cycles - Final output:";
-        report "  Layer2 Output[0] = " & real'image(output_2_layer2_real(0));
+        report "  Layer2 Output[0] = " & real'image(output_2_layer2_real(0)) & " (Expected: 0.855725)";
+        
+        total_tests := total_tests + 1;
+        if abs(output_2_layer2_real(0) - 0.855725) < TOLERANCE_C then
+            pass_count := pass_count + 1;
+            report "  Final Output PASS";
+        else
+            fail_count := fail_count + 1;
+            report "  Final Output FAIL";
+        end if;
 
         wait for CLK_PERIOD * 2;
 
@@ -323,8 +368,16 @@ begin
         -- Test Complete
         -- ====================================================================
         report "========================================";
-        report "All Tests Complete!";
+        report "Test Summary:";
+        report "  Passed: " & integer'image(pass_count) & "/" & integer'image(total_tests);
+        report "  Failed: " & integer'image(fail_count) & "/" & integer'image(total_tests);
         report "========================================";
+
+        if fail_count = 0 then
+            report "ALL TESTS PASSED!" severity note;
+        else
+            report "SOME TESTS FAILED!" severity warning;
+        end if;
 
         stop_clock <= true;
         wait;

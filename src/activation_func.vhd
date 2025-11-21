@@ -24,22 +24,73 @@ begin
 end architecture relu;
 
 architecture sigmoid of activation_func is
+    -- Constants for slicing
+    constant SLICE_HIGH : integer := 5; -- Sufficient for range -32 to 32 (covers -8 to 8 and prevents wrap-around for 16.0)
+    
+    -- Signals
     signal input_sfixed : sfixed(input_width - input_frac_width - 1 downto - input_frac_width);
+    signal input_slice : sfixed(SLICE_HIGH downto - input_frac_width);
     signal lut_index : integer range 0 to LUT_SIZE - 1;
     signal sigmoid_value : real;
     signal input_real : real;
     signal clipped : real;
     signal normalized : real;
+    
+    -- Overflow detection
+    signal overflow_pos : boolean;
+    signal overflow_neg : boolean;
 
 begin
     -- Convert input to sfixed
     input_sfixed <= to_sfixed(input_i, input_sfixed);
-    input_real <= to_real(input_sfixed);
+
+    -- Slicing and Overflow Logic
+    process(input_sfixed)
+        variable upper_bits : std_logic_vector(input_sfixed'high downto SLICE_HIGH + 1);
+        variable all_ones : std_logic_vector(input_sfixed'high downto SLICE_HIGH + 1) := (others => '1');
+        variable all_zeros : std_logic_vector(input_sfixed'high downto SLICE_HIGH + 1) := (others => '0');
+    begin
+        -- Default assignments
+        overflow_pos <= false;
+        overflow_neg <= false;
+        
+        -- Check if input is wider than slice
+        if input_sfixed'high > SLICE_HIGH then
+            upper_bits := to_std_logic_vector(input_sfixed(input_sfixed'high downto SLICE_HIGH + 1));
+            
+            if input_sfixed(input_sfixed'high) = '0' then -- Positive
+                if upper_bits /= all_zeros then
+                    overflow_pos <= true;
+                end if;
+            else -- Negative
+                if upper_bits /= all_ones then
+                    overflow_neg <= true;
+                end if;
+            end if;
+            
+            input_slice <= input_sfixed(SLICE_HIGH downto -input_frac_width);
+        else
+            -- Input is smaller than slice, no overflow possible (within representable range)
+            -- Resize to slice width (sign extend if needed, though 'high <= SLICE_HIGH)
+            input_slice <= resize(input_sfixed, input_slice);
+        end if;
+    end process;
+
+    -- Calculate Real Value with Overflow Handling
+    process(input_slice, overflow_pos, overflow_neg)
+    begin
+        if overflow_pos then
+            input_real <= INPUT_MAX + 1.0; -- Force clip to max
+        elsif overflow_neg then
+            input_real <= INPUT_MIN - 1.0; -- Force clip to min
+        else
+            input_real <= to_real(input_slice);
+        end if;
+    end process;
+
     clipped <= INPUT_MAX when input_real > INPUT_MAX else INPUT_MIN when input_real < INPUT_MIN else input_real;
     normalized <= ((clipped - INPUT_MIN)/(INPUT_MAX - INPUT_MIN));
 
-    -- Extract middle bits for LUT indexing (10 bits from input)
-    -- Using bits 4 downto -5
     lut_index <= 0 when (normalized  < 0.0)
                  else (LUT_SIZE - 1) when (normalized > 1.0)
                  else integer(normalized * real(LUT_SIZE - 1));
