@@ -289,14 +289,12 @@ end entity neural_network_tb;
 architecture testbench of neural_network_tb is
     -- Configuration
     constant NUM_INPUTS : integer := {num_inputs};
-    constant NUM_LAYERS : integer := {num_layers};
-    constant LAYER_SIZE_0 : integer := {layer_sizes[0] if num_layers >= 1 else 1};
-    constant LAYER_SIZE_1 : integer := {layer_sizes[1] if num_layers >= 2 else 1};
-    constant LAYER_SIZE_2 : integer := {layer_sizes[2] if num_layers >= 3 else 1};
-    constant LAYER_SIZE_3 : integer := {layer_sizes[3] if num_layers >= 4 else 1};
     constant NUM_OUTPUTS : integer := {num_outputs};
     constant DATA_WIDTH : integer := {config.input_width};
     constant TOLERANCE_C : real := {tolerance:.6f};
+    
+    -- Layer configuration
+    constant LAYER_SIZES : layer_config_array(0 to {num_layers - 1}) := ({', '.join(map(str, layer_sizes))});
     
     -- Clock
     constant CLK_PERIOD : time := 10 ns;
@@ -306,7 +304,7 @@ architecture testbench of neural_network_tb is
     -- DUT signals
     signal rst : std_logic := '0';
     signal load_mode : std_logic := '0';
-    signal layer_select : integer range 0 to NUM_LAYERS - 1 := 0;
+    signal layer_select : integer range 0 to 15 := 0;
     signal neuron_select : integer range 0 to 15 := 0;
     signal weight_index : integer range 0 to 15 := 0;
     signal weight_data : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
@@ -339,11 +337,7 @@ begin
     dut: entity work.neural_network
         generic map(
             num_inputs => NUM_INPUTS,
-            num_layers => NUM_LAYERS,
-            layer_size_0 => LAYER_SIZE_0,
-            layer_size_1 => LAYER_SIZE_1,
-            layer_size_2 => LAYER_SIZE_2,
-            layer_size_3 => LAYER_SIZE_3,
+            layer_sizes => LAYER_SIZES,
             data_width => DATA_WIDTH,
             use_sigmoid => true
         )

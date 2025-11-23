@@ -79,10 +79,6 @@ begin
             clk => clk,
             inputs_i => inputs_1,
             weights_matrix_i => weights_1,
-            load_enable => '0',
-            neuron_select => 0,
-            weight_data => (others => '0'),
-            weight_index => 0,
             output_o => output_1
         );
 
@@ -100,10 +96,6 @@ begin
             clk => clk,
             inputs_i => inputs_2_layer1,
             weights_matrix_i => weights_2_layer1,
-            load_enable => '0',
-            neuron_select => 0,
-            weight_data => (others => '0'),
-            weight_index => 0,
             output_o => output_2_layer1
         );
 
@@ -118,10 +110,6 @@ begin
             clk => clk,
             inputs_i => output_2_layer1,
             weights_matrix_i => weights_2_layer2,
-            load_enable => '0',
-            neuron_select => 0,
-            weight_data => (others => '0'),
-            weight_index => 0,
             output_o => output_2_layer2
         );
 

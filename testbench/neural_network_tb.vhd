@@ -11,14 +11,12 @@ end entity neural_network_tb;
 architecture testbench of neural_network_tb is
     -- Configuration
     constant NUM_INPUTS : integer := 4;
-    constant NUM_LAYERS : integer := 3;
-    constant LAYER_SIZE_0 : integer := 4;
-    constant LAYER_SIZE_1 : integer := 3;
-    constant LAYER_SIZE_2 : integer := 2;
-    constant LAYER_SIZE_3 : integer := 1;
     constant NUM_OUTPUTS : integer := 2;
     constant DATA_WIDTH : integer := 32;
     constant TOLERANCE_C : real := 0.046875;
+    
+    -- Layer configuration
+    constant LAYER_SIZES : layer_config_array(0 to 2) := (4, 3, 2);
     
     -- Clock
     constant CLK_PERIOD : time := 10 ns;
@@ -28,7 +26,7 @@ architecture testbench of neural_network_tb is
     -- DUT signals
     signal rst : std_logic := '0';
     signal load_mode : std_logic := '0';
-    signal layer_select : integer range 0 to NUM_LAYERS - 1 := 0;
+    signal layer_select : integer range 0 to 15 := 0;
     signal neuron_select : integer range 0 to 15 := 0;
     signal weight_index : integer range 0 to 15 := 0;
     signal weight_data : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
@@ -61,11 +59,7 @@ begin
     dut: entity work.neural_network
         generic map(
             num_inputs => NUM_INPUTS,
-            num_layers => NUM_LAYERS,
-            layer_size_0 => LAYER_SIZE_0,
-            layer_size_1 => LAYER_SIZE_1,
-            layer_size_2 => LAYER_SIZE_2,
-            layer_size_3 => LAYER_SIZE_3,
+            layer_sizes => LAYER_SIZES,
             data_width => DATA_WIDTH,
             use_sigmoid => true
         )
@@ -118,73 +112,73 @@ begin
             -- Neuron 0
             neuron_select <= 0;
             weight_index <= 0;
-            weight_data <= std_logic_vector(to_signed(33338, 32));
+            weight_data <= std_logic_vector(to_signed(-28009, 32));
             wait until rising_edge(clk);
             weight_index <= 1;
-            weight_data <= std_logic_vector(to_signed(42521, 32));
+            weight_data <= std_logic_vector(to_signed(29199, 32));
             wait until rising_edge(clk);
             weight_index <= 2;
-            weight_data <= std_logic_vector(to_signed(-26765, 32));
+            weight_data <= std_logic_vector(to_signed(11891, 32));
             wait until rising_edge(clk);
             weight_index <= 3;
-            weight_data <= std_logic_vector(to_signed(-21589, 32));
+            weight_data <= std_logic_vector(to_signed(11297, 32));
             wait until rising_edge(clk);
             weight_index <= 4;  -- Bias
-            weight_data <= std_logic_vector(to_signed(350, 32));
+            weight_data <= std_logic_vector(to_signed(-448, 32));
             wait until rising_edge(clk);
         
             -- Neuron 1
             neuron_select <= 1;
             weight_index <= 0;
-            weight_data <= std_logic_vector(to_signed(-24616, 32));
+            weight_data <= std_logic_vector(to_signed(-38573, 32));
             wait until rising_edge(clk);
             weight_index <= 1;
-            weight_data <= std_logic_vector(to_signed(50061, 32));
+            weight_data <= std_logic_vector(to_signed(-41537, 32));
             wait until rising_edge(clk);
             weight_index <= 2;
-            weight_data <= std_logic_vector(to_signed(32534, 32));
+            weight_data <= std_logic_vector(to_signed(-43780, 32));
             wait until rising_edge(clk);
             weight_index <= 3;
-            weight_data <= std_logic_vector(to_signed(27983, 32));
+            weight_data <= std_logic_vector(to_signed(23940, 32));
             wait until rising_edge(clk);
             weight_index <= 4;  -- Bias
-            weight_data <= std_logic_vector(to_signed(1818, 32));
+            weight_data <= std_logic_vector(to_signed(-1543, 32));
             wait until rising_edge(clk);
         
             -- Neuron 2
             neuron_select <= 2;
             weight_index <= 0;
-            weight_data <= std_logic_vector(to_signed(-37709, 32));
+            weight_data <= std_logic_vector(to_signed(-35501, 32));
             wait until rising_edge(clk);
             weight_index <= 1;
-            weight_data <= std_logic_vector(to_signed(-41983, 32));
+            weight_data <= std_logic_vector(to_signed(39059, 32));
             wait until rising_edge(clk);
             weight_index <= 2;
-            weight_data <= std_logic_vector(to_signed(-48308, 32));
+            weight_data <= std_logic_vector(to_signed(-39314, 32));
             wait until rising_edge(clk);
             weight_index <= 3;
-            weight_data <= std_logic_vector(to_signed(9050, 32));
+            weight_data <= std_logic_vector(to_signed(-47212, 32));
             wait until rising_edge(clk);
             weight_index <= 4;  -- Bias
-            weight_data <= std_logic_vector(to_signed(2419, 32));
+            weight_data <= std_logic_vector(to_signed(235, 32));
             wait until rising_edge(clk);
         
             -- Neuron 3
             neuron_select <= 3;
             weight_index <= 0;
-            weight_data <= std_logic_vector(to_signed(-23418, 32));
+            weight_data <= std_logic_vector(to_signed(16486, 32));
             wait until rising_edge(clk);
             weight_index <= 1;
-            weight_data <= std_logic_vector(to_signed(-10738, 32));
+            weight_data <= std_logic_vector(to_signed(20220, 32));
             wait until rising_edge(clk);
             weight_index <= 2;
-            weight_data <= std_logic_vector(to_signed(-47814, 32));
+            weight_data <= std_logic_vector(to_signed(-27618, 32));
             wait until rising_edge(clk);
             weight_index <= 3;
-            weight_data <= std_logic_vector(to_signed(-4733, 32));
+            weight_data <= std_logic_vector(to_signed(33252, 32));
             wait until rising_edge(clk);
             weight_index <= 4;  -- Bias
-            weight_data <= std_logic_vector(to_signed(-2296, 32));
+            weight_data <= std_logic_vector(to_signed(-1599, 32));
             wait until rising_edge(clk);
         
             -- Layer 1: 4 inputs -> 3 neurons
@@ -193,55 +187,55 @@ begin
             -- Neuron 0
             neuron_select <= 0;
             weight_index <= 0;
-            weight_data <= std_logic_vector(to_signed(37149, 32));
+            weight_data <= std_logic_vector(to_signed(-31162, 32));
             wait until rising_edge(clk);
             weight_index <= 1;
-            weight_data <= std_logic_vector(to_signed(-24173, 32));
+            weight_data <= std_logic_vector(to_signed(10092, 32));
             wait until rising_edge(clk);
             weight_index <= 2;
-            weight_data <= std_logic_vector(to_signed(-23556, 32));
+            weight_data <= std_logic_vector(to_signed(-33363, 32));
             wait until rising_edge(clk);
             weight_index <= 3;
-            weight_data <= std_logic_vector(to_signed(-6189, 32));
+            weight_data <= std_logic_vector(to_signed(51176, 32));
             wait until rising_edge(clk);
             weight_index <= 4;  -- Bias
-            weight_data <= std_logic_vector(to_signed(-2373, 32));
+            weight_data <= std_logic_vector(to_signed(-1457, 32));
             wait until rising_edge(clk);
         
             -- Neuron 1
             neuron_select <= 1;
             weight_index <= 0;
-            weight_data <= std_logic_vector(to_signed(-46322, 32));
+            weight_data <= std_logic_vector(to_signed(-58792, 32));
             wait until rising_edge(clk);
             weight_index <= 1;
-            weight_data <= std_logic_vector(to_signed(19847, 32));
+            weight_data <= std_logic_vector(to_signed(-26555, 32));
             wait until rising_edge(clk);
             weight_index <= 2;
-            weight_data <= std_logic_vector(to_signed(-62386, 32));
+            weight_data <= std_logic_vector(to_signed(-52474, 32));
             wait until rising_edge(clk);
             weight_index <= 3;
-            weight_data <= std_logic_vector(to_signed(19550, 32));
+            weight_data <= std_logic_vector(to_signed(-50712, 32));
             wait until rising_edge(clk);
             weight_index <= 4;  -- Bias
-            weight_data <= std_logic_vector(to_signed(-2399, 32));
+            weight_data <= std_logic_vector(to_signed(1609, 32));
             wait until rising_edge(clk);
         
             -- Neuron 2
             neuron_select <= 2;
             weight_index <= 0;
-            weight_data <= std_logic_vector(to_signed(18302, 32));
+            weight_data <= std_logic_vector(to_signed(-21764, 32));
             wait until rising_edge(clk);
             weight_index <= 1;
-            weight_data <= std_logic_vector(to_signed(29332, 32));
+            weight_data <= std_logic_vector(to_signed(-3949, 32));
             wait until rising_edge(clk);
             weight_index <= 2;
-            weight_data <= std_logic_vector(to_signed(-8344, 32));
+            weight_data <= std_logic_vector(to_signed(21683, 32));
             wait until rising_edge(clk);
             weight_index <= 3;
-            weight_data <= std_logic_vector(to_signed(4469, 32));
+            weight_data <= std_logic_vector(to_signed(22129, 32));
             wait until rising_edge(clk);
             weight_index <= 4;  -- Bias
-            weight_data <= std_logic_vector(to_signed(1796, 32));
+            weight_data <= std_logic_vector(to_signed(360, 32));
             wait until rising_edge(clk);
         
             -- Layer 2: 3 inputs -> 2 neurons
@@ -250,31 +244,31 @@ begin
             -- Neuron 0
             neuron_select <= 0;
             weight_index <= 0;
-            weight_data <= std_logic_vector(to_signed(12699, 32));
+            weight_data <= std_logic_vector(to_signed(-40696, 32));
             wait until rising_edge(clk);
             weight_index <= 1;
-            weight_data <= std_logic_vector(to_signed(-10392, 32));
+            weight_data <= std_logic_vector(to_signed(68969, 32));
             wait until rising_edge(clk);
             weight_index <= 2;
-            weight_data <= std_logic_vector(to_signed(-7750, 32));
+            weight_data <= std_logic_vector(to_signed(-4562, 32));
             wait until rising_edge(clk);
             weight_index <= 3;  -- Bias
-            weight_data <= std_logic_vector(to_signed(1330, 32));
+            weight_data <= std_logic_vector(to_signed(1656, 32));
             wait until rising_edge(clk);
         
             -- Neuron 1
             neuron_select <= 1;
             weight_index <= 0;
-            weight_data <= std_logic_vector(to_signed(-60078, 32));
+            weight_data <= std_logic_vector(to_signed(57295, 32));
             wait until rising_edge(clk);
             weight_index <= 1;
-            weight_data <= std_logic_vector(to_signed(-48033, 32));
+            weight_data <= std_logic_vector(to_signed(-9884, 32));
             wait until rising_edge(clk);
             weight_index <= 2;
-            weight_data <= std_logic_vector(to_signed(8778, 32));
+            weight_data <= std_logic_vector(to_signed(-16408, 32));
             wait until rising_edge(clk);
             weight_index <= 3;  -- Bias
-            weight_data <= std_logic_vector(to_signed(2414, 32));
+            weight_data <= std_logic_vector(to_signed(-857, 32));
             wait until rising_edge(clk);
         
             load_mode <= '0';
@@ -289,10 +283,10 @@ begin
         -- ====================================================================
             -- Test 0
             report "Test 0:";
-            inputs(0) <= std_logic_vector(to_signed(-36794, 32));
-            inputs(1) <= std_logic_vector(to_signed(887, 32));
-            inputs(2) <= std_logic_vector(to_signed(-38720, 32));
-            inputs(3) <= std_logic_vector(to_signed(57546, 32));
+            inputs(0) <= std_logic_vector(to_signed(23263, 32));
+            inputs(1) <= std_logic_vector(to_signed(64689, 32));
+            inputs(2) <= std_logic_vector(to_signed(38031, 32));
+            inputs(3) <= std_logic_vector(to_signed(-60845, 32));
             wait until rising_edge(clk);
             wait until rising_edge(clk);
             wait until rising_edge(clk);
@@ -302,8 +296,8 @@ begin
             total_tests := total_tests + 1;
         
             output_real := to_real(to_sfixed(outputs(0), output_fixed));
-            report "  Output[0] = " & real'image(output_real) & " (Expected: 0.494353)";
-            if abs(output_real - 0.494353) < TOLERANCE_C then
+            report "  Output[0] = " & real'image(output_real) & " (Expected: 0.481963)";
+            if abs(output_real - 0.481963) < TOLERANCE_C then
                 pass_count := pass_count + 1;
                 report "  Output[0] PASS";
             else
@@ -311,8 +305,8 @@ begin
                 report "  Output[0] FAIL";
             end if;
             output_real := to_real(to_sfixed(outputs(1), output_fixed));
-            report "  Output[1] = " & real'image(output_real) & " (Expected: 0.372880)";
-            if abs(output_real - 0.372880) < TOLERANCE_C then
+            report "  Output[1] = " & real'image(output_real) & " (Expected: 0.549240)";
+            if abs(output_real - 0.549240) < TOLERANCE_C then
                 pass_count := pass_count + 1;
                 report "  Output[1] PASS";
             else
@@ -322,10 +316,10 @@ begin
         
             -- Test 1
             report "Test 1:";
-            inputs(0) <= std_logic_vector(to_signed(28612, 32));
-            inputs(1) <= std_logic_vector(to_signed(55122, 32));
-            inputs(2) <= std_logic_vector(to_signed(58919, 32));
-            inputs(3) <= std_logic_vector(to_signed(-52599, 32));
+            inputs(0) <= std_logic_vector(to_signed(-16773, 32));
+            inputs(1) <= std_logic_vector(to_signed(-59810, 32));
+            inputs(2) <= std_logic_vector(to_signed(3688, 32));
+            inputs(3) <= std_logic_vector(to_signed(14557, 32));
             wait until rising_edge(clk);
             wait until rising_edge(clk);
             wait until rising_edge(clk);
@@ -335,8 +329,8 @@ begin
             total_tests := total_tests + 1;
         
             output_real := to_real(to_sfixed(outputs(0), output_fixed));
-            report "  Output[0] = " & real'image(output_real) & " (Expected: 0.495039)";
-            if abs(output_real - 0.495039) < TOLERANCE_C then
+            report "  Output[0] = " & real'image(output_real) & " (Expected: 0.476659)";
+            if abs(output_real - 0.476659) < TOLERANCE_C then
                 pass_count := pass_count + 1;
                 report "  Output[0] PASS";
             else
@@ -344,8 +338,8 @@ begin
                 report "  Output[0] FAIL";
             end if;
             output_real := to_real(to_sfixed(outputs(1), output_fixed));
-            report "  Output[1] = " & real'image(output_real) & " (Expected: 0.346256)";
-            if abs(output_real - 0.346256) < TOLERANCE_C then
+            report "  Output[1] = " & real'image(output_real) & " (Expected: 0.566324)";
+            if abs(output_real - 0.566324) < TOLERANCE_C then
                 pass_count := pass_count + 1;
                 report "  Output[1] PASS";
             else
@@ -355,10 +349,10 @@ begin
         
             -- Test 2
             report "Test 2:";
-            inputs(0) <= std_logic_vector(to_signed(63470, 32));
-            inputs(1) <= std_logic_vector(to_signed(-4067, 32));
-            inputs(2) <= std_logic_vector(to_signed(58682, 32));
-            inputs(3) <= std_logic_vector(to_signed(57359, 32));
+            inputs(0) <= std_logic_vector(to_signed(60526, 32));
+            inputs(1) <= std_logic_vector(to_signed(11385, 32));
+            inputs(2) <= std_logic_vector(to_signed(-116, 32));
+            inputs(3) <= std_logic_vector(to_signed(21788, 32));
             wait until rising_edge(clk);
             wait until rising_edge(clk);
             wait until rising_edge(clk);
@@ -368,8 +362,8 @@ begin
             total_tests := total_tests + 1;
         
             output_real := to_real(to_sfixed(outputs(0), output_fixed));
-            report "  Output[0] = " & real'image(output_real) & " (Expected: 0.493645)";
-            if abs(output_real - 0.493645) < TOLERANCE_C then
+            report "  Output[0] = " & real'image(output_real) & " (Expected: 0.472685)";
+            if abs(output_real - 0.472685) < TOLERANCE_C then
                 pass_count := pass_count + 1;
                 report "  Output[0] PASS";
             else
@@ -377,8 +371,8 @@ begin
                 report "  Output[0] FAIL";
             end if;
             output_real := to_real(to_sfixed(outputs(1), output_fixed));
-            report "  Output[1] = " & real'image(output_real) & " (Expected: 0.350692)";
-            if abs(output_real - 0.350692) < TOLERANCE_C then
+            report "  Output[1] = " & real'image(output_real) & " (Expected: 0.570215)";
+            if abs(output_real - 0.570215) < TOLERANCE_C then
                 pass_count := pass_count + 1;
                 report "  Output[1] PASS";
             else
@@ -388,10 +382,10 @@ begin
         
             -- Test 3
             report "Test 3:";
-            inputs(0) <= std_logic_vector(to_signed(-41301, 32));
-            inputs(1) <= std_logic_vector(to_signed(-2361, 32));
-            inputs(2) <= std_logic_vector(to_signed(-37522, 32));
-            inputs(3) <= std_logic_vector(to_signed(27366, 32));
+            inputs(0) <= std_logic_vector(to_signed(-50368, 32));
+            inputs(1) <= std_logic_vector(to_signed(21632, 32));
+            inputs(2) <= std_logic_vector(to_signed(-44329, 32));
+            inputs(3) <= std_logic_vector(to_signed(62833, 32));
             wait until rising_edge(clk);
             wait until rising_edge(clk);
             wait until rising_edge(clk);
@@ -401,8 +395,8 @@ begin
             total_tests := total_tests + 1;
         
             output_real := to_real(to_sfixed(outputs(0), output_fixed));
-            report "  Output[0] = " & real'image(output_real) & " (Expected: 0.495007)";
-            if abs(output_real - 0.495007) < TOLERANCE_C then
+            report "  Output[0] = " & real'image(output_real) & " (Expected: 0.455945)";
+            if abs(output_real - 0.455945) < TOLERANCE_C then
                 pass_count := pass_count + 1;
                 report "  Output[0] PASS";
             else
@@ -410,8 +404,8 @@ begin
                 report "  Output[0] FAIL";
             end if;
             output_real := to_real(to_sfixed(outputs(1), output_fixed));
-            report "  Output[1] = " & real'image(output_real) & " (Expected: 0.372194)";
-            if abs(output_real - 0.372194) < TOLERANCE_C then
+            report "  Output[1] = " & real'image(output_real) & " (Expected: 0.567001)";
+            if abs(output_real - 0.567001) < TOLERANCE_C then
                 pass_count := pass_count + 1;
                 report "  Output[1] PASS";
             else
@@ -421,10 +415,10 @@ begin
         
             -- Test 4
             report "Test 4:";
-            inputs(0) <= std_logic_vector(to_signed(-27893, 32));
-            inputs(1) <= std_logic_vector(to_signed(-40037, 32));
-            inputs(2) <= std_logic_vector(to_signed(14058, 32));
-            inputs(3) <= std_logic_vector(to_signed(50717, 32));
+            inputs(0) <= std_logic_vector(to_signed(8451, 32));
+            inputs(1) <= std_logic_vector(to_signed(54007, 32));
+            inputs(2) <= std_logic_vector(to_signed(54476, 32));
+            inputs(3) <= std_logic_vector(to_signed(-14012, 32));
             wait until rising_edge(clk);
             wait until rising_edge(clk);
             wait until rising_edge(clk);
@@ -434,8 +428,8 @@ begin
             total_tests := total_tests + 1;
         
             output_real := to_real(to_sfixed(outputs(0), output_fixed));
-            report "  Output[0] = " & real'image(output_real) & " (Expected: 0.493442)";
-            if abs(output_real - 0.493442) < TOLERANCE_C then
+            report "  Output[0] = " & real'image(output_real) & " (Expected: 0.479982)";
+            if abs(output_real - 0.479982) < TOLERANCE_C then
                 pass_count := pass_count + 1;
                 report "  Output[0] PASS";
             else
@@ -443,8 +437,8 @@ begin
                 report "  Output[0] FAIL";
             end if;
             output_real := to_real(to_sfixed(outputs(1), output_fixed));
-            report "  Output[1] = " & real'image(output_real) & " (Expected: 0.369768)";
-            if abs(output_real - 0.369768) < TOLERANCE_C then
+            report "  Output[1] = " & real'image(output_real) & " (Expected: 0.554837)";
+            if abs(output_real - 0.554837) < TOLERANCE_C then
                 pass_count := pass_count + 1;
                 report "  Output[1] PASS";
             else

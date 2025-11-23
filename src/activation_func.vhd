@@ -10,7 +10,8 @@ entity activation_func is
     generic(
         input_width : integer := 48;
         input_frac_width : integer := 16;
-        output_width : integer := 32
+        output_width : integer := 32;
+        max_value : real := 1.0  -- Maximum threshold for clamped ReLU
     );
     port(
         input_i : in std_logic_vector(input_width - 1 downto 0);
@@ -103,3 +104,32 @@ begin
     output_o <= to_sfixed(sigmoid_value, output_o'high, output_o'low);
 
 end architecture sigmoid;
+
+architecture clamped_relu of activation_func is
+    constant MAX_THRESHOLD : sfixed((output_width + 1) / 2 - 1 downto -(output_width / 2)) := 
+        to_sfixed(max_value, (output_width + 1) / 2 - 1, -(output_width / 2));
+    constant ZERO : sfixed((output_width + 1) / 2 - 1 downto -(output_width / 2)) := 
+        to_sfixed(0.0, (output_width + 1) / 2 - 1, -(output_width / 2));
+    
+    signal input_sfixed : sfixed(input_width - input_frac_width - 1 downto -input_frac_width);
+begin
+    -- Convert input to sfixed
+    input_sfixed <= to_sfixed(input_i, input_sfixed);
+    
+    -- Clamped ReLU: output = clamp(input, 0, max_value)
+    process(input_sfixed)
+    begin
+        if input_sfixed < ZERO then
+            -- Below minimum: clamp to 0
+            output_o <= ZERO;
+        elsif input_sfixed > MAX_THRESHOLD then
+            -- Above maximum: clamp to max_value
+            output_o <= MAX_THRESHOLD;
+        else
+            -- Within range: pass through (resize to output width)
+            output_o <= resize(input_sfixed, output_o);
+        end if;
+    end process;
+
+end architecture clamped_relu;
+

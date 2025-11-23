@@ -10,6 +10,8 @@ package types is
     subtype std_logic_bus is std_logic_vector(width - 1 downto 0);
     type std_logic_bus_array is array (integer range<>) of std_logic_vector; -- for neuron weights and inputs
     type weights_matrix is array (integer range<>) of std_logic_bus_array; -- for layer weights
+    -- Unconstrained integer array for layer sizes (avoiding conflict with VHDL-2008 integer_vector)
+    type layer_config_array is array (natural range <>) of integer;
     type weights_tensor is array (integer range<>) of weights_matrix; -- for network weights
 
     constant int_s : integer := 16;
