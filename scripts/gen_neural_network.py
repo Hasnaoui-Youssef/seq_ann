@@ -179,19 +179,46 @@ def generate_test_vectors(model, num_tests=10, input_dim=4):
     return inputs, outputs
 
 
+def train_xor_model():
+    """
+    Create and train a model for XOR function.
+    Topology: 2 inputs -> 3 hidden -> 1 output
+    """
+    if not KERAS_AVAILABLE:
+        raise ImportError("TensorFlow/Keras is required")
+    
+    # XOR data
+    X = np.array([[0,0], [0,1], [1,0], [1,1]])
+    y = np.array([[0], [1], [1], [0]])
+    
+    model = keras.Sequential()
+    # 2 inputs -> 3 hidden neurons
+    model.add(keras.layers.Dense(3, activation='sigmoid', input_dim=2))
+    # 3 hidden -> 1 output neuron
+    model.add(keras.layers.Dense(1, activation='sigmoid'))
+    
+    model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.1), loss='mse')
+    
+    print("Training XOR model...")
+    # Train until convergence (simple problem, should be fast)
+    model.fit(X, y, epochs=2000, verbose=0)
+    
+    # Verify accuracy
+    preds = model.predict(X, verbose=0)
+    print("XOR Predictions:")
+    for i in range(4):
+        print(f"  {X[i]} -> {preds[i][0]:.4f} (Expected: {y[i][0]})")
+        
+    return model, X, y
+
 def generate_neural_network_testbench(model_name, layer_params, test_inputs, test_outputs, 
                                      config, output_file="testbench/neural_network_tb.vhd"):
     """
     Generate complete VHDL testbench for neural network.
-    
-    Args:
-        model_name: Name of the model
-        layer_params: List of (weights, biases) tuples
-        test_inputs: Test input vectors
-        test_outputs: Expected output vectors
-        config: SigmoidConfig object
-        output_file: Output file path
     """
+    
+    # Determine entity name from filename
+    entity_name = Path(output_file).stem
     
     num_layers = len(layer_params)
     num_inputs = layer_params[0][0].shape[0]
@@ -283,10 +310,10 @@ use ieee.fixed_pkg.all;
 
 use work.types.all;
 
-entity neural_network_tb is
-end entity neural_network_tb;
+entity {entity_name} is
+end entity {entity_name};
 
-architecture testbench of neural_network_tb is
+architecture testbench of {entity_name} is
     -- Configuration
     constant NUM_INPUTS : integer := {num_inputs};
     constant NUM_OUTPUTS : integer := {num_outputs};
@@ -338,7 +365,6 @@ begin
         generic map(
             num_inputs => NUM_INPUTS,
             layer_sizes => LAYER_SIZES,
-            data_width => DATA_WIDTH,
             use_sigmoid => true
         )
         port map(
@@ -439,6 +465,8 @@ def main():
                         help='Path to saved Keras model file')
     parser.add_argument('--create-model', action='store_true',
                         help='Create a simple model for testing')
+    parser.add_argument('--xor', action='store_true',
+                        help='Train and test on XOR problem')
     parser.add_argument('--layers', type=str, default='4,3,2',
                         help='Layer sizes (comma-separated), e.g., "4,3,2" for 4->3->2 network')
     parser.add_argument('--input-dim', type=int, default=4,
@@ -459,8 +487,14 @@ def main():
         print("Install with: pip install tensorflow")
         return 1
     
+    test_inputs = None
+    test_outputs = None
+    
     # Create or load model
-    if args.model_file:
+    if args.xor:
+        print("Training XOR model...")
+        model, test_inputs, test_outputs = train_xor_model()
+    elif args.model_file:
         print(f"Loading model from {args.model_file}...")
         model = load_model_from_file(args.model_file)
     elif args.create_model:
@@ -475,16 +509,17 @@ def main():
         print("Training model (this is just for demo)...")
         model.fit(X_train, y_train, epochs=10, verbose=0)
     else:
-        print("ERROR: Either --model-file or --create-model must be specified")
+        print("ERROR: Either --model-file, --create-model, or --xor must be specified")
         return 1
     
     # Extract weights and biases
     print("\nExtracting weights and biases...")
     layer_params = extract_weights_biases(model)
     
-    # Generate test vectors
-    print(f"Generating {args.num_tests} test vectors...")
-    test_inputs, test_outputs = generate_test_vectors(model, args.num_tests, args.input_dim)
+    # Generate test vectors if not already generated (for XOR)
+    if test_inputs is None:
+        print(f"Generating {args.num_tests} test vectors...")
+        test_inputs, test_outputs = generate_test_vectors(model, args.num_tests, args.input_dim)
     
     # Create config
     config = SigmoidConfig(

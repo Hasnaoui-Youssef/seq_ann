@@ -46,7 +46,7 @@ begin
         port map(
             a => result_sigs(i - 1),
             b => input_resize(i),
-            carry_i => carry_sigs(i - 1),
+            carry_i => '0', -- Carry in for accumulation step should be 0
             sum_o => result_sigs(i),
             overflow_o => carry_sigs(i)
         );

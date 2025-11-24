@@ -46,39 +46,57 @@ begin
     input_sfixed <= to_sfixed(input_i, input_sfixed);
 
     -- Slicing and Overflow Logic
-    process(input_sfixed)
-        variable upper_bits : std_logic_vector(input_sfixed'high downto SLICE_HIGH + 1);
-        variable all_ones : std_logic_vector(input_sfixed'high downto SLICE_HIGH + 1) := (others => '1');
-        variable all_zeros : std_logic_vector(input_sfixed'high downto SLICE_HIGH + 1) := (others => '0');
+    process(all) -- Use VHDL-2008 all
+        variable v_upper_bits_or : std_logic;
     begin
         -- Default assignments
         overflow_pos <= false;
         overflow_neg <= false;
+        input_slice <= (others => '0');
         
         -- Check if input is wider than slice
         if input_sfixed'high > SLICE_HIGH then
-            upper_bits := to_std_logic_vector(input_sfixed(input_sfixed'high downto SLICE_HIGH + 1));
+            -- Check upper bits for overflow
+            v_upper_bits_or := '0';
+            for k in input_sfixed'high downto SLICE_HIGH + 1 loop
+                if input_sfixed(k) = '1' then
+                    v_upper_bits_or := '1';
+                end if;
+            end loop;
             
             if input_sfixed(input_sfixed'high) = '0' then -- Positive
-                if upper_bits /= all_zeros then
+                -- If any upper bit is 1, it's an overflow
+                if v_upper_bits_or = '1' then
                     overflow_pos <= true;
                 end if;
             else -- Negative
-                if upper_bits /= all_ones then
+                -- If any upper bit is 0 (not all ones), it's an overflow (large negative)
+                -- Wait, for negative numbers:
+                -- -1 is 111...111. Upper bits are 1.
+                -- Large negative (e.g. -100) is 11...10...
+                -- So we check if upper bits are NOT all ones.
+                -- i.e. if any upper bit is 0.
+                v_upper_bits_or := '0'; -- Reuse variable to track if any '0' found
+                for k in input_sfixed'high downto SLICE_HIGH + 1 loop
+                    if input_sfixed(k) = '0' then
+                        v_upper_bits_or := '1'; -- Found a zero
+                    end if;
+                end loop;
+                
+                if v_upper_bits_or = '1' then
                     overflow_neg <= true;
                 end if;
             end if;
             
             input_slice <= input_sfixed(SLICE_HIGH downto -input_frac_width);
         else
-            -- Input is smaller than slice, no overflow possible (within representable range)
-            -- Resize to slice width (sign extend if needed, though 'high <= SLICE_HIGH)
+            -- Input is smaller than slice
             input_slice <= resize(input_sfixed, input_slice);
         end if;
     end process;
 
     -- Calculate Real Value with Overflow Handling
-    process(input_slice, overflow_pos, overflow_neg)
+    process(all)
     begin
         if overflow_pos then
             input_real <= INPUT_MAX + 1.0; -- Force clip to max
@@ -103,6 +121,11 @@ begin
     -- Convert to output fixed-point format
     output_o <= to_sfixed(sigmoid_value, output_o'high, output_o'low);
 
+
+    
+    -- Startup check
+    assert false report "Sigmoid Architecture Instantiated" severity note;
+
 end architecture sigmoid;
 
 architecture clamped_relu of activation_func is
@@ -113,6 +136,9 @@ architecture clamped_relu of activation_func is
     
     signal input_sfixed : sfixed(input_width - input_frac_width - 1 downto -input_frac_width);
 begin
+    -- Startup check
+    assert false report "Clamped ReLU Architecture Instantiated" severity note;
+
     -- Convert input to sfixed
     input_sfixed <= to_sfixed(input_i, input_sfixed);
     

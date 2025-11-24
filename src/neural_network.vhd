@@ -8,7 +8,6 @@ entity neural_network is
     generic(
         num_inputs : integer := 4;          -- Number of network inputs
         layer_sizes : layer_config_array;   -- Unconstrained array of layer sizes
-        data_width : integer := 32;
         use_sigmoid : boolean := true
     );
     port (
@@ -18,17 +17,17 @@ entity neural_network is
         -- Control signals
         load_mode : in std_logic;           -- '1' = weight loading, '0' = inference
         
-        -- Weight loading interface
-        layer_select : in integer range 0 to 15;   -- Max 16 layers
-        neuron_select : in integer range 0 to 15;  -- Max 16 neurons per layer
-        weight_index : in integer range 0 to 15;   -- Max 16 inputs per neuron
-        weight_data : in std_logic_vector(data_width - 1 downto 0);
+        -- Weight loading
+        neuron_select : in integer;
+        layer_select : in integer range 0 to layer_sizes'high;
+        weight_index : in integer;  -- Size depends on layer configuration
+        weight_data : in std_logic_vector(DATA_WIDTH - 1 downto 0);
         
         -- Inference interface
-        inputs_i : in std_logic_bus_array(num_inputs - 1 downto 0)(data_width - 1 downto 0);
+        inputs_i : in std_logic_bus_array(0 to num_inputs - 1)(DATA_WIDTH - 1 downto 0);
         
         -- Output (size depends on final layer)
-        outputs_o : out std_logic_bus_array(0 to 15)(data_width - 1 downto 0);
+        outputs_o : out std_logic_bus_array(0 to layer_sizes(layer_sizes'high) - 1)(DATA_WIDTH - 1 downto 0);
         output_valid_o : out std_logic;
         
         -- Status
@@ -38,7 +37,7 @@ end entity neural_network;
 
 architecture rtl of neural_network is
     -- Number of layers is determined from array length
-    constant num_layers : integer := layer_sizes'length;
+    -- Number of layers is determined from array length
     
     -- Helper function to get layer input size
     function get_layer_input_size(layer_idx : integer) return integer is
@@ -49,13 +48,28 @@ architecture rtl of neural_network is
             return layer_sizes(layer_idx - 1);
         end if;
     end function;
+
+    -- Calculate maximum layer size from layer_sizes array
+    function get_max_layer_size return integer is
+        variable max_size : integer := 0;
+    begin
+        for i in layer_sizes'range loop
+            if layer_sizes(i) > max_size then
+                max_size := layer_sizes(i);
+            end if;
+        end loop;
+        return max_size;
+    end function;
+    
+    constant MAX_LAYER_SIZE : integer := get_max_layer_size;
+    constant NUM_LAYERS : integer := layer_sizes'length;
     
     -- State machine
     type state_t is (IDLE, LOADING, READY, INFERENCE, OUTPUT);
     signal state : state_t := IDLE;
     
     -- Layer signals - we need max possible size
-    type layer_output_array is array (0 to 15) of std_logic_bus_array(0 to 15)(data_width - 1 downto 0);
+    type layer_output_array is array (0 to NUM_LAYERS - 1) of std_logic_bus_array(0 to MAX_LAYER_SIZE - 1)(DATA_WIDTH - 1 downto 0);
     signal layer_outputs : layer_output_array;
     
     -- Pipeline control
@@ -63,7 +77,7 @@ architecture rtl of neural_network is
     signal output_valid : std_logic := '0';
     
     -- Layer enable signals for weight loading
-    type layer_load_enable_array is array (0 to 15) of std_logic;
+    type layer_load_enable_array is array (0 to NUM_LAYERS - 1) of std_logic;
     signal layer_load_enable : layer_load_enable_array;
 
 begin
@@ -121,37 +135,36 @@ begin
     -- ========================================================================
     -- Layer Load Enable Generation
     -- ========================================================================
-    load_enable_gen : for i in 0 to 15 generate
+    -- ========================================================================
+    -- Layer Load Enable Generation
+    -- ========================================================================
+    load_enable_gen : for i in 0 to NUM_LAYERS - 1 generate
         neuron_load_enable : process(load_mode, layer_select)
         begin
-            if i < num_layers and load_mode = '1' and layer_select = i then
+            if i < NUM_LAYERS and load_mode = '1' and layer_select = i then
                 layer_load_enable(i) <= '1';
             else
                 layer_load_enable(i) <= '0';
             end if;
         end process;
     end generate;
-    
-    -- ========================================================================
-    -- Dynamic Layer Instantiation
-    -- ========================================================================
+
     layers_gen : for i in layer_sizes'range generate
         first_layer_gen : if i = layer_sizes'left generate
             layer_inst : entity work.layer
                 generic map(
+                    layer_index => i,
                     num_inputs => num_inputs,
-                    num_outputs => layer_sizes(i),
-                    data_width => data_width,
+                    layer_size => layer_sizes(i),
                     use_sigmoid => use_sigmoid
                 )
                 port map(
                     clk => clk,
-                    inputs_i => inputs_i,
-                    weights_matrix_i => (others => (others => (others => '0'))), -- Unused
                     load_enable => layer_load_enable(i),
                     neuron_select => neuron_select,
-                    weight_data => weight_data,
                     weight_index => weight_index,
+                    weight_data => weight_data,
+                    inputs_i => inputs_i,
                     output_o => layer_outputs(i)(0 to layer_sizes(i) - 1)
                 );
         end generate;
@@ -159,19 +172,18 @@ begin
         other_layers_gen : if i /= layer_sizes'left generate
             layer_inst : entity work.layer
                 generic map(
+                    layer_index => i,
                     num_inputs => layer_sizes(i - 1),
-                    num_outputs => layer_sizes(i),
-                    data_width => data_width,
+                    layer_size => layer_sizes(i),
                     use_sigmoid => use_sigmoid
                 )
                 port map(
                     clk => clk,
-                    inputs_i => layer_outputs(i - 1)(0 to layer_sizes(i - 1) - 1),
-                    weights_matrix_i => (others => (others => (others => '0'))), -- Unused
                     load_enable => layer_load_enable(i),
                     neuron_select => neuron_select,
-                    weight_data => weight_data,
                     weight_index => weight_index,
+                    weight_data => weight_data,
+                    inputs_i => layer_outputs(i - 1)(0 to layer_sizes(i - 1) - 1),
                     output_o => layer_outputs(i)(0 to layer_sizes(i) - 1)
                 );
         end generate;

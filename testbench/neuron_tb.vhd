@@ -14,22 +14,23 @@ architecture testbench of neuron_tb is
     constant DATA_WIDTH_C : integer := 32;
     constant USE_SIGMOID_C : boolean := true;
     constant TOLERANCE_C : real := 0.023438;
+    constant CLK_PERIOD : time := 10 ns;
 
-    signal inputs_s : std_logic_bus_array(NUM_INPUTS_C - 1 downto 0)(DATA_WIDTH_C - 1 downto 0);
-    signal weights_s : std_logic_bus_array(NUM_INPUTS_C downto 0)(DATA_WIDTH_C - 1 downto 0);
+    signal clk : std_logic := '0';
+    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
     signal output_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0);
     signal overflow_s : std_logic;
-
-    -- Helper signals for monitoring
-    type real_array is array (integer range <>) of real;
-    signal inputs_real : real_array(NUM_INPUTS_C - 1 downto 0);
-    signal weights_real : real_array(NUM_INPUTS_C downto 0);
-    signal output_real : real;
+    
+    -- Weight loading signals
+    signal load_enable : std_logic := '0';
+    signal weight_data : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
+    signal weight_index : integer := 0;
 
     -- Test vectors
+    type real_array is array (integer range <>) of real;
     type test_case is record
-        inputs : real_array(NUM_INPUTS_C - 1 downto 0);
-        weights : real_array(NUM_INPUTS_C downto 0);  -- Last is bias
+        inputs : real_array(0 to NUM_INPUTS_C - 1);
+        weights : real_array(0 to NUM_INPUTS_C);  -- Last is bias
         expected_sum : real;
         description : string;
     end record;
@@ -75,45 +76,30 @@ architecture testbench of neuron_tb is
     );
 
 begin
+    -- Clock generation
+    process
+    begin
+        while true loop
+            clk <= '0'; wait for CLK_PERIOD / 2;
+            clk <= '1'; wait for CLK_PERIOD / 2;
+        end loop;
+    end process;
+
     -- DUT instantiation
     dut: entity work.neuron
         generic map(
             num_inputs => NUM_INPUTS_C,
-            data_width => DATA_WIDTH_C,
             use_sigmoid => USE_SIGMOID_C
         )
         port map(
+            clk => clk,
             inputs_i => inputs_s,
-            weights_i => weights_s,
+            load_enable => load_enable,
+            weight_data_i => weight_data,
+            weight_index_i => weight_index,
             output_o => output_s,
             overflow_o => overflow_s
         );
-
-    -- Convert signals for monitoring
-    monitor_proc : process(inputs_s, weights_s, output_s)
-        variable input_fixed  : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-        variable weight_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-        variable output_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-    begin
-        for i in 0 to NUM_INPUTS_C - 1 loop
-            input_fixed := to_sfixed(arg => inputs_s(i),
-                                     left_index => input_fixed'high,
-                                     right_index => input_fixed'low);
-            inputs_real(i) <= to_real(input_fixed);
-        end loop;
-
-        for i in 0 to NUM_INPUTS_C loop
-            weight_fixed := to_sfixed(arg => weights_s(i),
-                                      left_index => weight_fixed'high,
-                                      right_index => weight_fixed'low);
-            weights_real(i) <= to_real(weight_fixed);
-        end loop;
-
-        output_fixed := to_sfixed(arg => output_s,
-                                  left_index => output_fixed'high,
-                                  right_index => output_fixed'low);
-        output_real <= to_real(output_fixed);
-    end process;
 
     -- Test process
     test_proc: process
@@ -121,8 +107,10 @@ begin
         variable pass_count : integer := 0;
         variable fail_count : integer := 0;
         variable expected_sigmoid : real;
+        variable output_real : real;
         variable input_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
         variable weight_fixed : sfixed((DATA_WIDTH_C  + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
+        variable output_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
     begin
         report "========================================";
         report "Starting Neuron Test";
@@ -135,13 +123,31 @@ begin
         end if;
         report "Tolerance: " & real'image(TOLERANCE_C);
         report "========================================";
+        
+        -- Reset/Init
+        load_enable <= '0';
+        wait for CLK_PERIOD * 2;
 
         -- Run test cases
         for test_idx in TEST_CASES'range loop
             report "----------------------------------------";
             report "Test " & integer'image(test_idx) & ": " & TEST_CASES(test_idx).description;
+            
+            -- 1. Load weights
+            report "Loading weights...";
+            for i in 0 to NUM_INPUTS_C loop -- inputs + bias
+                weight_fixed := to_sfixed(arg => TEST_CASES(test_idx).weights(i),
+                                         left_index => weight_fixed'high,
+                                         right_index => weight_fixed'low);
+                weight_data <= to_slv(weight_fixed);
+                weight_index <= i;
+                load_enable <= '1';
+                wait until rising_edge(clk);
+            end loop;
+            load_enable <= '0';
+            wait until rising_edge(clk);
 
-            -- Set inputs
+            -- 2. Set inputs
             for i in 0 to NUM_INPUTS_C - 1 loop
                 input_fixed := to_sfixed(arg => TEST_CASES(test_idx).inputs(i),
                                         left_index => input_fixed'high,
@@ -149,18 +155,16 @@ begin
                 inputs_s(i) <= to_slv(input_fixed);
             end loop;
 
-            -- Set weights (including bias)
-            for i in 0 to NUM_INPUTS_C loop
-                weight_fixed := to_sfixed(arg => TEST_CASES(test_idx).weights(i),
-                                         left_index => weight_fixed'high,
-                                         right_index => weight_fixed'low);
-                weights_s(i) <= to_slv(weight_fixed);
-            end loop;
+            -- 3. Wait for computation (pipeline depth)
+            wait until rising_edge(clk);
+            wait until rising_edge(clk);
+            wait for CLK_PERIOD / 2; -- Sample in middle of cycle
 
-            -- Wait for computation
-            wait for 50 ns;
+            -- 4. Capture output
+            output_fixed := to_sfixed(output_s, output_fixed);
+            output_real := to_real(output_fixed);
 
-            -- Calculate expected output based on activation
+            -- 5. Calculate expected output based on activation
             if USE_SIGMOID_C then
                 -- Sigmoid activation
                 expected_sigmoid := 1.0 / (1.0 + 2.718281828459 ** (-TEST_CASES(test_idx).expected_sum));
@@ -194,7 +198,7 @@ begin
                 fail_count := fail_count + 1;
             end if;
 
-            wait for 50 ns;
+            wait for CLK_PERIOD;
         end loop;
 
         -- Summary

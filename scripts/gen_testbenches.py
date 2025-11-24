@@ -182,12 +182,8 @@ def generate_neuron_tb(config : SigmoidConfig, output_file="testbench/neuron_tb.
     """Generate VHDL testbench for neuron"""
 
     # Calculate max step in LUT for tolerance
-    # Max derivative of sigmoid is 0.25 at x=0
-    # Step size in input is (max-min)/lut_size
-    # Max step in output is approx 0.25 * input_step
     input_step = (config.input_range[1] - config.input_range[0]) / config.lut_size
     max_lut_step = 0.25 * input_step
-    # Add some safety margin
     tolerance = max_lut_step * 1.5
 
     vhdl_code = f"""library ieee;
@@ -206,22 +202,23 @@ architecture testbench of neuron_tb is
     constant DATA_WIDTH_C : integer := {config.input_width};
     constant USE_SIGMOID_C : boolean := true;
     constant TOLERANCE_C : real := {tolerance:.6f};
+    constant CLK_PERIOD : time := 10 ns;
 
-    signal inputs_s : std_logic_bus_array(NUM_INPUTS_C - 1 downto 0)(DATA_WIDTH_C - 1 downto 0);
-    signal weights_s : std_logic_bus_array(NUM_INPUTS_C downto 0)(DATA_WIDTH_C - 1 downto 0);
+    signal clk : std_logic := '0';
+    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
     signal output_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0);
     signal overflow_s : std_logic;
-
-    -- Helper signals for monitoring
-    type real_array is array (integer range <>) of real;
-    signal inputs_real : real_array(NUM_INPUTS_C - 1 downto 0);
-    signal weights_real : real_array(NUM_INPUTS_C downto 0);
-    signal output_real : real;
+    
+    -- Weight loading signals
+    signal load_enable : std_logic := '0';
+    signal weight_data : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
+    signal weight_index : integer := 0;
 
     -- Test vectors
+    type real_array is array (integer range <>) of real;
     type test_case is record
-        inputs : real_array(NUM_INPUTS_C - 1 downto 0);
-        weights : real_array(NUM_INPUTS_C downto 0);  -- Last is bias
+        inputs : real_array(0 to NUM_INPUTS_C - 1);
+        weights : real_array(0 to NUM_INPUTS_C);  -- Last is bias
         expected_sum : real;
         description : string;
     end record;
@@ -267,45 +264,30 @@ architecture testbench of neuron_tb is
     );
 
 begin
+    -- Clock generation
+    process
+    begin
+        while true loop
+            clk <= '0'; wait for CLK_PERIOD / 2;
+            clk <= '1'; wait for CLK_PERIOD / 2;
+        end loop;
+    end process;
+
     -- DUT instantiation
     dut: entity work.neuron
         generic map(
             num_inputs => NUM_INPUTS_C,
-            data_width => DATA_WIDTH_C,
             use_sigmoid => USE_SIGMOID_C
         )
         port map(
+            clk => clk,
             inputs_i => inputs_s,
-            weights_i => weights_s,
+            load_enable => load_enable,
+            weight_data_i => weight_data,
+            weight_index_i => weight_index,
             output_o => output_s,
             overflow_o => overflow_s
         );
-
-    -- Convert signals for monitoring
-    monitor_proc : process(inputs_s, weights_s, output_s)
-        variable input_fixed  : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-        variable weight_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-        variable output_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-    begin
-        for i in 0 to NUM_INPUTS_C - 1 loop
-            input_fixed := to_sfixed(arg => inputs_s(i),
-                                     left_index => input_fixed'high,
-                                     right_index => input_fixed'low);
-            inputs_real(i) <= to_real(input_fixed);
-        end loop;
-
-        for i in 0 to NUM_INPUTS_C loop
-            weight_fixed := to_sfixed(arg => weights_s(i),
-                                      left_index => weight_fixed'high,
-                                      right_index => weight_fixed'low);
-            weights_real(i) <= to_real(weight_fixed);
-        end loop;
-
-        output_fixed := to_sfixed(arg => output_s,
-                                  left_index => output_fixed'high,
-                                  right_index => output_fixed'low);
-        output_real <= to_real(output_fixed);
-    end process;
 
     -- Test process
     test_proc: process
@@ -313,8 +295,10 @@ begin
         variable pass_count : integer := 0;
         variable fail_count : integer := 0;
         variable expected_sigmoid : real;
+        variable output_real : real;
         variable input_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
         variable weight_fixed : sfixed((DATA_WIDTH_C  + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
+        variable output_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
     begin
         report "========================================";
         report "Starting Neuron Test";
@@ -327,13 +311,31 @@ begin
         end if;
         report "Tolerance: " & real'image(TOLERANCE_C);
         report "========================================";
+        
+        -- Reset/Init
+        load_enable <= '0';
+        wait for CLK_PERIOD * 2;
 
         -- Run test cases
         for test_idx in TEST_CASES'range loop
             report "----------------------------------------";
             report "Test " & integer'image(test_idx) & ": " & TEST_CASES(test_idx).description;
+            
+            -- 1. Load weights
+            report "Loading weights...";
+            for i in 0 to NUM_INPUTS_C loop -- inputs + bias
+                weight_fixed := to_sfixed(arg => TEST_CASES(test_idx).weights(i),
+                                         left_index => weight_fixed'high,
+                                         right_index => weight_fixed'low);
+                weight_data <= to_slv(weight_fixed);
+                weight_index <= i;
+                load_enable <= '1';
+                wait until rising_edge(clk);
+            end loop;
+            load_enable <= '0';
+            wait until rising_edge(clk);
 
-            -- Set inputs
+            -- 2. Set inputs
             for i in 0 to NUM_INPUTS_C - 1 loop
                 input_fixed := to_sfixed(arg => TEST_CASES(test_idx).inputs(i),
                                         left_index => input_fixed'high,
@@ -341,18 +343,16 @@ begin
                 inputs_s(i) <= to_slv(input_fixed);
             end loop;
 
-            -- Set weights (including bias)
-            for i in 0 to NUM_INPUTS_C loop
-                weight_fixed := to_sfixed(arg => TEST_CASES(test_idx).weights(i),
-                                         left_index => weight_fixed'high,
-                                         right_index => weight_fixed'low);
-                weights_s(i) <= to_slv(weight_fixed);
-            end loop;
+            -- 3. Wait for computation (pipeline depth)
+            wait until rising_edge(clk);
+            wait until rising_edge(clk);
+            wait for CLK_PERIOD / 2; -- Sample in middle of cycle
 
-            -- Wait for computation
-            wait for 50 ns;
+            -- 4. Capture output
+            output_fixed := to_sfixed(output_s, output_fixed);
+            output_real := to_real(output_fixed);
 
-            -- Calculate expected output based on activation
+            -- 5. Calculate expected output based on activation
             if USE_SIGMOID_C then
                 -- Sigmoid activation
                 expected_sigmoid := 1.0 / (1.0 + 2.718281828459 ** (-TEST_CASES(test_idx).expected_sum));
@@ -386,7 +386,7 @@ begin
                 fail_count := fail_count + 1;
             end if;
 
-            wait for 50 ns;
+            wait for CLK_PERIOD;
         end loop;
 
         -- Summary
@@ -429,7 +429,7 @@ def generate_layer_tb(config : SigmoidConfig, output_file="testbench/layer_tb.vh
     def sigmoid_activation(x):
         return 1.0 / (1.0 + math.exp(-x))
 
-    # Test 1: Single Layer (4 inputs -> 2 outputs)
+    # Test Configuration: Single Layer (4 inputs -> 2 outputs)
     inputs_1 = [0.5, 1.0, -0.5, 0.25]
     weights_1 = [
         [1.0, 0.5, -0.5, 0.75, 0.5],   # Neuron 0 (last is bias)
@@ -443,33 +443,6 @@ def generate_layer_tb(config : SigmoidConfig, output_file="testbench/layer_tb.vh
             sum_val += inputs_1[j] * weights_1[i][j]
         expected_1.append(sigmoid_activation(sum_val))
 
-    # Test 2: Two Layers (4 -> 2 -> 1)
-    inputs_2 = [1.0, 0.5, -1.0, 0.75]
-    weights_2_L1 = [
-        [0.8, 0.3, -0.4, 0.6, 0.2],    # Neuron 0
-        [0.4, 0.9, 0.1, -0.3, -0.1]    # Neuron 1
-    ]
-    weights_2_L2 = [
-        [1.2, 0.7, 0.3]                # Neuron 0 (2 inputs + bias)
-    ]
-
-    # Layer 1
-    L1_out = []
-    for i in range(2):
-        sum_val = weights_2_L1[i][4]
-        for j in range(4):
-            sum_val += inputs_2[j] * weights_2_L1[i][j]
-        L1_out.append(sigmoid_activation(sum_val))
-
-    # Layer 2
-    L2_out = []
-    for i in range(1):
-        sum_val = weights_2_L2[i][2]
-        for j in range(2):
-            sum_val += L1_out[j] * weights_2_L2[i][j]
-        L2_out.append(sigmoid_activation(sum_val))
-
-
     vhdl_code = f"""library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -481,367 +454,161 @@ entity layer_tb is
 end entity layer_tb;
 
 architecture testbench of layer_tb is
-    -- Test 1 configuration: Single layer (4 inputs -> 2 outputs)
-    constant NUM_INPUTS_1 : integer := 4;
-    constant NUM_OUTPUTS_1 : integer := 2;
+    -- Configuration
+    constant NUM_INPUTS : integer := 4;
+    constant NUM_OUTPUTS : integer := 2;
     constant DATA_WIDTH_C : integer := {config.input_width};
     constant USE_SIGMOID_C : boolean := true;
     constant TOLERANCE_C : real := {tolerance:.6f};
-
-    -- Test 2 configuration: Two layers (4 -> 2 -> 1)
-    constant NUM_INPUTS_2 : integer := 4;
-    constant NUM_OUTPUTS_2 : integer := 2;
-    constant NUM_OUTPUTS_3 : integer := 1;
-
-    -- Clock period
     constant CLK_PERIOD : time := 10 ns;
 
-    -- Clock signal
+    -- Signals
     signal clk : std_logic := '0';
-    signal stop_clock : boolean := false;
-
-    -- Test 1 signals
-    signal inputs_1 : std_logic_bus_array(NUM_INPUTS_1 - 1 downto 0)(DATA_WIDTH_C - 1 downto 0);
-    signal weights_1 : weights_matrix(0 to NUM_OUTPUTS_1 - 1)(0 to NUM_INPUTS_1)(DATA_WIDTH_C - 1 downto 0);
-    signal output_1 : std_logic_bus_array(0 to NUM_OUTPUTS_1 - 1)(DATA_WIDTH_C - 1 downto 0);
-
-    -- Test 2 signals
-    signal inputs_2_layer1 : std_logic_bus_array(NUM_INPUTS_2 - 1 downto 0)(DATA_WIDTH_C - 1 downto 0);
-    signal weights_2_layer1 : weights_matrix(0 to NUM_OUTPUTS_2 - 1)(0 to NUM_INPUTS_2)(DATA_WIDTH_C - 1 downto 0);
-    signal output_2_layer1 : std_logic_bus_array(0 to NUM_OUTPUTS_2 - 1)(DATA_WIDTH_C - 1 downto 0);
-
-    signal weights_2_layer2 : weights_matrix(0 to NUM_OUTPUTS_3 - 1)(0 to NUM_OUTPUTS_2)(DATA_WIDTH_C - 1 downto 0);
-    signal output_2_layer2 : std_logic_bus_array(0 to NUM_OUTPUTS_3 - 1)(DATA_WIDTH_C - 1 downto 0);
-
-    -- Helper signals for monitoring (convert to real for display)
-    type real_array is array (integer range <>) of real;
-    type real_array_2d is array (integer range<>, integer range<>) of real;
-    signal inputs_1_real : real_array(NUM_INPUTS_1 - 1 downto 0);
-    signal output_1_real : real_array(0 to NUM_OUTPUTS_1 - 1);
-    signal inputs_2_real : real_array(NUM_INPUTS_2 - 1 downto 0);
-    signal output_2_layer1_real : real_array(0 to NUM_OUTPUTS_2 - 1);
-    signal output_2_layer2_real : real_array(0 to NUM_OUTPUTS_3 - 1);
+    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH_C - 1 downto 0);
+    signal output_s : std_logic_bus_array(0 to NUM_OUTPUTS - 1)(DATA_WIDTH_C - 1 downto 0);
+    
+    -- Weight loading
+    signal load_enable : std_logic := '0';
+    signal neuron_select : integer := 0;
+    signal weight_data : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
+    signal weight_index : integer := 0;
 
 begin
-    -- ========================================================================
     -- Clock generation
-    -- ========================================================================
-    clk_proc: process
+    process
     begin
-        while not stop_clock loop
-            clk <= '0';
-            wait for CLK_PERIOD / 2;
-            clk <= '1';
-            wait for CLK_PERIOD / 2;
+        while true loop
+            clk <= '0'; wait for CLK_PERIOD / 2;
+            clk <= '1'; wait for CLK_PERIOD / 2;
         end loop;
-        wait;
-    end process clk_proc;
+    end process;
 
-    -- ========================================================================
-    -- Test 1: Single Layer (4 inputs -> 2 outputs)
-    -- ========================================================================
-    layer_1_inst: entity work.layer
+    -- DUT Instantiation
+    dut: entity work.layer
         generic map(
-            num_inputs => NUM_INPUTS_1,
-            num_outputs => NUM_OUTPUTS_1,
-            data_width => DATA_WIDTH_C,
+            num_inputs => NUM_INPUTS,
+            layer_size => NUM_OUTPUTS,
             use_sigmoid => USE_SIGMOID_C
         )
         port map(
             clk => clk,
-            inputs_i => inputs_1,
-            weights_matrix_i => weights_1,
-            output_o => output_1
+            inputs_i => inputs_s,
+            load_enable => load_enable,
+            neuron_select => neuron_select,
+            weight_data => weight_data,
+            weight_index => weight_index,
+            output_o => output_s
         );
 
-    -- ========================================================================
-    -- Test 2: Two Layers (4 -> 2 -> 1)
-    -- ========================================================================
-    layer_2_1_inst: entity work.layer
-        generic map(
-            num_inputs => NUM_INPUTS_2,
-            num_outputs => NUM_OUTPUTS_2,
-            data_width => DATA_WIDTH_C,
-            use_sigmoid => USE_SIGMOID_C
-        )
-        port map(
-            clk => clk,
-            inputs_i => inputs_2_layer1,
-            weights_matrix_i => weights_2_layer1,
-            output_o => output_2_layer1
-        );
-
-    layer_2_2_inst: entity work.layer
-        generic map(
-            num_inputs => NUM_OUTPUTS_2,
-            num_outputs => NUM_OUTPUTS_3,
-            data_width => DATA_WIDTH_C,
-            use_sigmoid => USE_SIGMOID_C
-        )
-        port map(
-            clk => clk,
-            inputs_i => output_2_layer1,
-            weights_matrix_i => weights_2_layer2,
-            output_o => output_2_layer2
-        );
-
-    -- ========================================================================
-    -- Monitor process: Convert signals to real for display
-    -- ========================================================================
-    monitor_proc: process(inputs_1, output_1, inputs_2_layer1, output_2_layer1, output_2_layer2)
-        variable temp_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-    begin
-        -- Test 1 monitoring
-        for i in 0 to NUM_INPUTS_1 - 1 loop
-            temp_fixed := to_sfixed(inputs_1(i), temp_fixed'high, temp_fixed'low);
-            inputs_1_real(i) <= to_real(temp_fixed);
-        end loop;
-
-        for i in 0 to NUM_OUTPUTS_1 - 1 loop
-            temp_fixed := to_sfixed(output_1(i), temp_fixed'high, temp_fixed'low);
-            output_1_real(i) <= to_real(temp_fixed);
-        end loop;
-
-        -- Test 2 monitoring
-        for i in 0 to NUM_INPUTS_2 - 1 loop
-            temp_fixed := to_sfixed(inputs_2_layer1(i), temp_fixed'high, temp_fixed'low);
-            inputs_2_real(i) <= to_real(temp_fixed);
-        end loop;
-
-        for i in 0 to NUM_OUTPUTS_2 - 1 loop
-            temp_fixed := to_sfixed(output_2_layer1(i), temp_fixed'high, temp_fixed'low);
-            output_2_layer1_real(i) <= to_real(temp_fixed);
-        end loop;
-
-        for i in 0 to NUM_OUTPUTS_3 - 1 loop
-            temp_fixed := to_sfixed(output_2_layer2(i), temp_fixed'high, temp_fixed'low);
-            output_2_layer2_real(i) <= to_real(temp_fixed);
-        end loop;
-    end process monitor_proc;
-
-    -- ========================================================================
-    -- Test stimulus process
-    -- ========================================================================
+    -- Test Process
     test_proc: process
         variable input_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
         variable weight_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
+        variable output_real : real;
         variable pass_count : integer := 0;
         variable fail_count : integer := 0;
-        variable total_tests : integer := 0;
     begin
         report "========================================";
         report "Starting Layer Testbench";
-        report "Data Width: " & integer'image(DATA_WIDTH_C);
-        report "Activation: Sigmoid";
-        report "Tolerance: " & real'image(TOLERANCE_C);
         report "========================================";
+        
+        -- Init
+        load_enable <= '0';
+        wait for CLK_PERIOD * 2;
 
-        -- ====================================================================
-        -- TEST 1: Single Layer (4 inputs -> 2 outputs)
-        -- ====================================================================
-        report "========================================";
-        report "TEST 1: Single Layer (4 inputs -> 2 outputs)";
-        report "========================================";
+        -- 1. Load Weights
+        report "Loading weights...";
+        
+        -- Neuron 0
+        neuron_select <= 0;
+        -- Weights: {weights_1[0]}
+        -- w0
+        weight_fixed := to_sfixed({weights_1[0][0]}, weight_fixed'high, weight_fixed'low);
+        weight_data <= to_slv(weight_fixed); weight_index <= 0; load_enable <= '1'; wait until rising_edge(clk);
+        -- w1
+        weight_fixed := to_sfixed({weights_1[0][1]}, weight_fixed'high, weight_fixed'low);
+        weight_data <= to_slv(weight_fixed); weight_index <= 1; load_enable <= '1'; wait until rising_edge(clk);
+        -- w2
+        weight_fixed := to_sfixed({weights_1[0][2]}, weight_fixed'high, weight_fixed'low);
+        weight_data <= to_slv(weight_fixed); weight_index <= 2; load_enable <= '1'; wait until rising_edge(clk);
+        -- w3
+        weight_fixed := to_sfixed({weights_1[0][3]}, weight_fixed'high, weight_fixed'low);
+        weight_data <= to_slv(weight_fixed); weight_index <= 3; load_enable <= '1'; wait until rising_edge(clk);
+        -- bias
+        weight_fixed := to_sfixed({weights_1[0][4]}, weight_fixed'high, weight_fixed'low);
+        weight_data <= to_slv(weight_fixed); weight_index <= 4; load_enable <= '1'; wait until rising_edge(clk);
 
-        -- Initialize inputs for Test 1
+        -- Neuron 1
+        neuron_select <= 1;
+        -- Weights: {weights_1[1]}
+        -- w0
+        weight_fixed := to_sfixed({weights_1[1][0]}, weight_fixed'high, weight_fixed'low);
+        weight_data <= to_slv(weight_fixed); weight_index <= 0; load_enable <= '1'; wait until rising_edge(clk);
+        -- w1
+        weight_fixed := to_sfixed({weights_1[1][1]}, weight_fixed'high, weight_fixed'low);
+        weight_data <= to_slv(weight_fixed); weight_index <= 1; load_enable <= '1'; wait until rising_edge(clk);
+        -- w2
+        weight_fixed := to_sfixed({weights_1[1][2]}, weight_fixed'high, weight_fixed'low);
+        weight_data <= to_slv(weight_fixed); weight_index <= 2; load_enable <= '1'; wait until rising_edge(clk);
+        -- w3
+        weight_fixed := to_sfixed({weights_1[1][3]}, weight_fixed'high, weight_fixed'low);
+        weight_data <= to_slv(weight_fixed); weight_index <= 3; load_enable <= '1'; wait until rising_edge(clk);
+        -- bias
+        weight_fixed := to_sfixed({weights_1[1][4]}, weight_fixed'high, weight_fixed'low);
+        weight_data <= to_slv(weight_fixed); weight_index <= 4; load_enable <= '1'; wait until rising_edge(clk);
+
+        load_enable <= '0';
+        wait until rising_edge(clk);
+        report "Weights loaded.";
+
+        -- 2. Set Inputs
         -- Inputs: {inputs_1}
         input_fixed := to_sfixed({inputs_1[0]}, input_fixed'high, input_fixed'low);
-        inputs_1(0) <= to_slv(input_fixed);
-
+        inputs_s(0) <= to_slv(input_fixed);
         input_fixed := to_sfixed({inputs_1[1]}, input_fixed'high, input_fixed'low);
-        inputs_1(1) <= to_slv(input_fixed);
-
+        inputs_s(1) <= to_slv(input_fixed);
         input_fixed := to_sfixed({inputs_1[2]}, input_fixed'high, input_fixed'low);
-        inputs_1(2) <= to_slv(input_fixed);
-
+        inputs_s(2) <= to_slv(input_fixed);
         input_fixed := to_sfixed({inputs_1[3]}, input_fixed'high, input_fixed'low);
-        inputs_1(3) <= to_slv(input_fixed);
+        inputs_s(3) <= to_slv(input_fixed);
 
-        -- Set weights for Test 1
-        -- Neuron 0: weights={weights_1[0][:-1]}, bias={weights_1[0][-1]}
-        -- Neuron 1: weights={weights_1[1][:-1]}, bias={weights_1[1][-1]}
-
-        -- Neuron 0 weights
-        weight_fixed := to_sfixed({weights_1[0][0]}, weight_fixed'high, weight_fixed'low);
-        weights_1(0)(0) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_1[0][1]}, weight_fixed'high, weight_fixed'low);
-        weights_1(0)(1) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_1[0][2]}, weight_fixed'high, weight_fixed'low);
-        weights_1(0)(2) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_1[0][3]}, weight_fixed'high, weight_fixed'low);
-        weights_1(0)(3) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_1[0][4]}, weight_fixed'high, weight_fixed'low);  -- bias
-        weights_1(0)(4) <= to_slv(weight_fixed);
-
-        -- Neuron 1 weights
-        weight_fixed := to_sfixed({weights_1[1][0]}, weight_fixed'high, weight_fixed'low);
-        weights_1(1)(0) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_1[1][1]}, weight_fixed'high, weight_fixed'low);
-        weights_1(1)(1) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_1[1][2]}, weight_fixed'high, weight_fixed'low);
-        weights_1(1)(2) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_1[1][3]}, weight_fixed'high, weight_fixed'low);
-        weights_1(1)(3) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_1[1][4]}, weight_fixed'high, weight_fixed'low);  -- bias
-        weights_1(1)(4) <= to_slv(weight_fixed);
-
-        report "Inputs set: {inputs_1}";
-        report "Weights configured for 2 neurons";
-        report "Waiting 2 clock cycles for output...";
-
-        -- Wait 2 clock cycles for pipeline
+        -- 3. Wait for computation
         wait until rising_edge(clk);
         wait until rising_edge(clk);
-        wait for CLK_PERIOD / 4;  -- Wait a bit into the cycle for signals to settle
+        wait for CLK_PERIOD / 2;
 
-        report "Test 1 Output:";
-        report "  Output[0] = " & real'image(output_1_real(0)) & " (Expected: {expected_1[0]:.6f})";
-        report "  Output[1] = " & real'image(output_1_real(1)) & " (Expected: {expected_1[1]:.6f})";
-        
-        total_tests := total_tests + 2;
-        
-        if abs(output_1_real(0) - {expected_1[0]:.6f}) < TOLERANCE_C then
-            pass_count := pass_count + 1;
-            report "  Output[0] PASS";
+        -- 4. Check Outputs
+        -- Output 0
+        output_real := to_real(to_sfixed(output_s(0), input_fixed));
+        report "Output[0]: " & real'image(output_real) & " Expected: {expected_1[0]:.6f}";
+        if abs(output_real - {expected_1[0]:.6f}) < TOLERANCE_C then
+            pass_count := pass_count + 1; report "PASS";
         else
-            fail_count := fail_count + 1;
-            report "  Output[0] FAIL";
+            fail_count := fail_count + 1; report "FAIL";
         end if;
 
-        if abs(output_1_real(1) - {expected_1[1]:.6f}) < TOLERANCE_C then
-            pass_count := pass_count + 1;
-            report "  Output[1] PASS";
+        -- Output 1
+        output_real := to_real(to_sfixed(output_s(1), input_fixed));
+        report "Output[1]: " & real'image(output_real) & " Expected: {expected_1[1]:.6f}";
+        if abs(output_real - {expected_1[1]:.6f}) < TOLERANCE_C then
+            pass_count := pass_count + 1; report "PASS";
         else
-            fail_count := fail_count + 1;
-            report "  Output[1] FAIL";
+            fail_count := fail_count + 1; report "FAIL";
         end if;
 
-        wait for CLK_PERIOD * 2;
-
-        -- ====================================================================
-        -- TEST 2: Two Layers (4 -> 2 -> 1)
-        -- ====================================================================
+        -- Summary
         report "========================================";
-        report "TEST 2: Two Layers (4 -> 2 -> 1)";
-        report "========================================";
-
-        -- Initialize inputs for Test 2
-        -- Inputs: {inputs_2}
-        input_fixed := to_sfixed({inputs_2[0]}, input_fixed'high, input_fixed'low);
-        inputs_2_layer1(0) <= to_slv(input_fixed);
-
-        input_fixed := to_sfixed({inputs_2[1]}, input_fixed'high, input_fixed'low);
-        inputs_2_layer1(1) <= to_slv(input_fixed);
-
-        input_fixed := to_sfixed({inputs_2[2]}, input_fixed'high, input_fixed'low);
-        inputs_2_layer1(2) <= to_slv(input_fixed);
-
-        input_fixed := to_sfixed({inputs_2[3]}, input_fixed'high, input_fixed'low);
-        inputs_2_layer1(3) <= to_slv(input_fixed);
-
-        -- Set weights for Layer 1 (4 inputs -> 2 outputs)
-        -- Neuron 0: weights={weights_2_L1[0][:-1]}, bias={weights_2_L1[0][-1]}
-        -- Neuron 1: weights={weights_2_L1[1][:-1]}, bias={weights_2_L1[1][-1]}
-
-        -- Layer 1, Neuron 0 weights
-        weight_fixed := to_sfixed({weights_2_L1[0][0]}, weight_fixed'high, weight_fixed'low);
-        weights_2_layer1(0)(0) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_2_L1[0][1]}, weight_fixed'high, weight_fixed'low);
-        weights_2_layer1(0)(1) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_2_L1[0][2]}, weight_fixed'high, weight_fixed'low);
-        weights_2_layer1(0)(2) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_2_L1[0][3]}, weight_fixed'high, weight_fixed'low);
-        weights_2_layer1(0)(3) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_2_L1[0][4]}, weight_fixed'high, weight_fixed'low);  -- bias
-        weights_2_layer1(0)(4) <= to_slv(weight_fixed);
-
-        -- Layer 1, Neuron 1 weights
-        weight_fixed := to_sfixed({weights_2_L1[1][0]}, weight_fixed'high, weight_fixed'low);
-        weights_2_layer1(1)(0) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_2_L1[1][1]}, weight_fixed'high, weight_fixed'low);
-        weights_2_layer1(1)(1) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_2_L1[1][2]}, weight_fixed'high, weight_fixed'low);
-        weights_2_layer1(1)(2) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_2_L1[1][3]}, weight_fixed'high, weight_fixed'low);
-        weights_2_layer1(1)(3) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_2_L1[1][4]}, weight_fixed'high, weight_fixed'low);  -- bias
-        weights_2_layer1(1)(4) <= to_slv(weight_fixed);
-
-        -- Set weights for Layer 2 (2 inputs -> 1 output)
-        -- Neuron 0: weights={weights_2_L2[0][:-1]}, bias={weights_2_L2[0][-1]}
-
-        weight_fixed := to_sfixed({weights_2_L2[0][0]}, weight_fixed'high, weight_fixed'low);
-        weights_2_layer2(0)(0) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_2_L2[0][1]}, weight_fixed'high, weight_fixed'low);
-        weights_2_layer2(0)(1) <= to_slv(weight_fixed);
-
-        weight_fixed := to_sfixed({weights_2_L2[0][2]}, weight_fixed'high, weight_fixed'low);  -- bias
-        weights_2_layer2(0)(2) <= to_slv(weight_fixed);
-
-        report "Inputs set: {inputs_2}";
-        report "Weights configured for Layer 1 (4->2) and Layer 2 (2->1)";
-        report "Waiting 4 clock cycles for final output...";
-
-        -- Wait 4 clock cycles for both layers
-        wait until rising_edge(clk);
-        wait until rising_edge(clk);
-        report "After 2 cycles - Layer 1 output:";
-        report "  Layer1 Output[0] = " & real'image(output_2_layer1_real(0)) & " (Expected: {L1_out[0]:.6f})";
-        report "  Layer1 Output[1] = " & real'image(output_2_layer1_real(1)) & " (Expected: {L1_out[1]:.6f})";
-
-        wait until rising_edge(clk);
-        wait until rising_edge(clk);
-        wait for CLK_PERIOD / 4;  -- Wait a bit into the cycle for signals to settle
-
-        report "After 4 cycles - Final output:";
-        report "  Layer2 Output[0] = " & real'image(output_2_layer2_real(0)) & " (Expected: {L2_out[0]:.6f})";
+        report "Passed: " & integer'image(pass_count) & "/2";
+        report "Failed: " & integer'image(fail_count) & "/2";
         
-        total_tests := total_tests + 1;
-        if abs(output_2_layer2_real(0) - {L2_out[0]:.6f}) < TOLERANCE_C then
-            pass_count := pass_count + 1;
-            report "  Final Output PASS";
-        else
-            fail_count := fail_count + 1;
-            report "  Final Output FAIL";
-        end if;
-
-        wait for CLK_PERIOD * 2;
-
-        -- ====================================================================
-        -- Test Complete
-        -- ====================================================================
-        report "========================================";
-        report "Test Summary:";
-        report "  Passed: " & integer'image(pass_count) & "/" & integer'image(total_tests);
-        report "  Failed: " & integer'image(fail_count) & "/" & integer'image(total_tests);
-        report "========================================";
-
         if fail_count = 0 then
             report "ALL TESTS PASSED!" severity note;
         else
             report "SOME TESTS FAILED!" severity warning;
         end if;
 
-        stop_clock <= true;
         wait;
-    end process test_proc;
+    end process;
 
 end architecture testbench;
 """
