@@ -12,7 +12,7 @@ WAVE_FORMAT ?= ghw
 WAVEFILE = $(WORKDIR)/$(TESTBENCH).$(WAVE_FORMAT)
 
 # GHDL flags
-GHDL_FLAGS = --workdir=$(WORKDIR) --std=08 --warn-no-vital-generic
+GHDL_FLAGS = --workdir=$(WORKDIR) --std=08 --ieee=synopsys -frelaxed --warn-no-vital-generic
 
 # Compilation
 compile:

@@ -19,10 +19,10 @@ entity activation_func is
     );
 end entity activation_func;
 
-architecture relu of activation_func is
-begin
-    output_o <= to_sfixed(input_i, output_o) when signed(input_i) >= 0 else to_sfixed_a(0);
-end architecture relu;
+-- architecture relu of activation_func is
+-- begin
+--     output_o <= to_sfixed(input_i, output_o) when signed(input_i) >= 0 else to_sfixed_a(0);
+-- end architecture relu;
 
 architecture sigmoid of activation_func is
     -- Constants for slicing
@@ -105,6 +105,9 @@ begin
         else
             input_real <= to_real(input_slice);
         end if;
+        
+        report "Sigmoid Debug: slice=" & to_hstring(input_slice) & 
+               " real=" & real'image(to_real(input_slice));
     end process;
 
     clipped <= INPUT_MAX when input_real > INPUT_MAX else INPUT_MIN when input_real < INPUT_MIN else input_real;
@@ -120,6 +123,14 @@ begin
 
     -- Convert to output fixed-point format
     output_o <= to_sfixed(sigmoid_value, output_o'high, output_o'low);
+    
+    process(input_real)
+    begin
+        report "Sigmoid Debug: in=" & real'image(input_real) & 
+               " norm=" & real'image(normalized) & 
+               " idx=" & integer'image(lut_index) & 
+               " val=" & real'image(sigmoid_value);
+    end process;
 
 
     
@@ -128,34 +139,33 @@ begin
 
 end architecture sigmoid;
 
-architecture clamped_relu of activation_func is
-    constant MAX_THRESHOLD : sfixed((output_width + 1) / 2 - 1 downto -(output_width / 2)) := 
-        to_sfixed(max_value, (output_width + 1) / 2 - 1, -(output_width / 2));
-    constant ZERO : sfixed((output_width + 1) / 2 - 1 downto -(output_width / 2)) := 
-        to_sfixed(0.0, (output_width + 1) / 2 - 1, -(output_width / 2));
-    
-    signal input_sfixed : sfixed(input_width - input_frac_width - 1 downto -input_frac_width);
-begin
-    -- Startup check
-    assert false report "Clamped ReLU Architecture Instantiated" severity note;
-
-    -- Convert input to sfixed
-    input_sfixed <= to_sfixed(input_i, input_sfixed);
-    
-    -- Clamped ReLU: output = clamp(input, 0, max_value)
-    process(input_sfixed)
-    begin
-        if input_sfixed < ZERO then
-            -- Below minimum: clamp to 0
-            output_o <= ZERO;
-        elsif input_sfixed > MAX_THRESHOLD then
-            -- Above maximum: clamp to max_value
-            output_o <= MAX_THRESHOLD;
-        else
-            -- Within range: pass through (resize to output width)
-            output_o <= resize(input_sfixed, output_o);
-        end if;
-    end process;
-
-end architecture clamped_relu;
-
+-- architecture clamped_relu of activation_func is
+--     constant MAX_THRESHOLD : sfixed((output_width + 1) / 2 - 1 downto -(output_width / 2)) := 
+--         to_sfixed(max_value, (output_width + 1) / 2 - 1, -(output_width / 2));
+--     constant ZERO : sfixed((output_width + 1) / 2 - 1 downto -(output_width / 2)) := 
+--         to_sfixed(0.0, (output_width + 1) / 2 - 1, -(output_width / 2));
+--     
+--     signal input_sfixed : sfixed(input_width - input_frac_width - 1 downto -input_frac_width);
+-- begin
+--     -- Startup check
+--     assert false report "Clamped ReLU Architecture Instantiated" severity note;
+-- 
+--     -- Convert input to sfixed
+--     input_sfixed <= to_sfixed(input_i, input_sfixed);
+--     
+--     -- Clamped ReLU: output = clamp(input, 0, max_value)
+--     process(input_sfixed)
+--     begin
+--         if input_sfixed < ZERO then
+--             -- Below minimum: clamp to 0
+--             output_o <= ZERO;
+--         elsif input_sfixed > MAX_THRESHOLD then
+--             -- Above maximum: clamp to max_value
+--             output_o <= MAX_THRESHOLD;
+--         else
+--             -- Within range: pass through (resize to output width)
+--             output_o <= resize(input_sfixed, output_o);
+--         end if;
+--     end process;
+-- 
+-- end architecture clamped_relu;
