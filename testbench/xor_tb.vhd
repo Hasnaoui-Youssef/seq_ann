@@ -127,7 +127,8 @@ begin
             assert abs(to_real_val(output_data) - expected) < TOLERANCE_C
                 report "Test Failed!" severity error;
                 
-            -- Don't wait for done (not implemented yet)
+            -- TODO: Wait for 'done' signal once calc_done is implemented in calculation_unit
+            -- Currently calc_done is hardcoded to '0' in neural_network.vhd
             wait until rising_edge(clk);
             wait until rising_edge(clk);
         end procedure;

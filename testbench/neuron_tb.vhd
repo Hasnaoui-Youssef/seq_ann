@@ -17,14 +17,21 @@ architecture testbench of neuron_tb is
     constant CLK_PERIOD : time := 10 ns;
 
     signal clk : std_logic := '0';
-    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
-    signal output_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0);
-    signal overflow_s : std_logic;
+    signal rst : std_logic := '1';
     
-    -- Weight loading signals
-    signal load_enable : std_logic := '0';
-    signal weight_data : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
-    signal weight_index : integer := 0;
+    -- Forward pass signals
+    signal fwd_en : std_logic := '0';
+    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
+    signal weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
+    signal bias_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
+    signal output_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0);
+    
+    -- Backward pass signals (not used in forward-only test)
+    signal bwd_en : std_logic := '0';
+    signal error_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
+    signal grad_weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
+    signal grad_bias_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0);
+    signal grad_inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
 
     -- Test vectors
     type real_array is array (integer range <>) of real;
@@ -93,12 +100,17 @@ begin
         )
         port map(
             clk => clk,
+            rst => rst,
+            fwd_en => fwd_en,
             inputs_i => inputs_s,
-            load_enable => load_enable,
-            weight_data_i => weight_data,
-            weight_index_i => weight_index,
+            weights_i => weights_s,
+            bias_i => bias_s,
             output_o => output_s,
-            overflow_o => overflow_s
+            bwd_en => bwd_en,
+            error_i => error_s,
+            grad_weights_o => grad_weights_s,
+            grad_bias_o => grad_bias_s,
+            grad_inputs_o => grad_inputs_s
         );
 
     -- Test process
@@ -124,8 +136,11 @@ begin
         report "Tolerance: " & real'image(TOLERANCE_C);
         report "========================================";
         
-        -- Reset/Init
-        load_enable <= '0';
+        -- Reset
+        rst <= '1';
+        fwd_en <= '0';
+        wait for CLK_PERIOD * 2;
+        rst <= '0';
         wait for CLK_PERIOD * 2;
 
         -- Run test cases
@@ -133,21 +148,20 @@ begin
             report "----------------------------------------";
             report "Test " & integer'image(test_idx) & ": " & TEST_CASES(test_idx).description;
             
-            -- 1. Load weights
-            report "Loading weights...";
-            for i in 0 to NUM_INPUTS_C loop -- inputs + bias
+            -- Set weights (directly, no weight loading interface)
+            for i in 0 to NUM_INPUTS_C - 1 loop
                 weight_fixed := to_sfixed(arg => TEST_CASES(test_idx).weights(i),
                                          left_index => weight_fixed'high,
                                          right_index => weight_fixed'low);
-                weight_data <= to_slv(weight_fixed);
-                weight_index <= i;
-                load_enable <= '1';
-                wait until rising_edge(clk);
+                weights_s(i) <= to_slv(weight_fixed);
             end loop;
-            load_enable <= '0';
-            wait until rising_edge(clk);
-
-            -- 2. Set inputs
+            -- Set bias
+            weight_fixed := to_sfixed(arg => TEST_CASES(test_idx).weights(NUM_INPUTS_C),
+                                     left_index => weight_fixed'high,
+                                     right_index => weight_fixed'low);
+            bias_s <= to_slv(weight_fixed);
+            
+            -- Set inputs
             for i in 0 to NUM_INPUTS_C - 1 loop
                 input_fixed := to_sfixed(arg => TEST_CASES(test_idx).inputs(i),
                                         left_index => input_fixed'high,
@@ -155,16 +169,18 @@ begin
                 inputs_s(i) <= to_slv(input_fixed);
             end loop;
 
-            -- 3. Wait for computation (pipeline depth)
+            -- Enable forward pass
+            fwd_en <= '1';
             wait until rising_edge(clk);
             wait until rising_edge(clk);
+            wait until rising_edge(clk);  -- Wait for pipeline
             wait for CLK_PERIOD / 2; -- Sample in middle of cycle
 
-            -- 4. Capture output
+            -- Capture output
             output_fixed := to_sfixed(output_s, output_fixed);
             output_real := to_real(output_fixed);
 
-            -- 5. Calculate expected output based on activation
+            -- Calculate expected output based on activation
             if USE_SIGMOID_C then
                 -- Sigmoid activation
                 expected_sigmoid := 1.0 / (1.0 + 2.718281828459 ** (-TEST_CASES(test_idx).expected_sum));
@@ -186,10 +202,6 @@ begin
                 report "  Actual output: " & real'image(output_real);
             end if;
 
-            if overflow_s = '1' then
-                report "  WARNING: Overflow detected!";
-            end if;
-
             if test_pass then
                 report "  PASS";
                 pass_count := pass_count + 1;
@@ -198,6 +210,7 @@ begin
                 fail_count := fail_count + 1;
             end if;
 
+            fwd_en <= '0';
             wait for CLK_PERIOD;
         end loop;
 
