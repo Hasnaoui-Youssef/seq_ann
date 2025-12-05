@@ -78,11 +78,11 @@ architecture rtl of memory_control_unit is
         lr    : std_logic_vector;
         grad  : std_logic_vector
     ) return std_logic_vector is
-        variable w_sfixed : sfixed(DATA_WIDTH/2 - 1 downto -DATA_WIDTH/2);
-        variable lr_sfixed : sfixed(DATA_WIDTH/2 - 1 downto -DATA_WIDTH/2);
-        variable grad_sfixed : sfixed(DATA_WIDTH/2 - 1 downto -DATA_WIDTH/2);
-        variable delta : sfixed(DATA_WIDTH/2 - 1 downto -DATA_WIDTH/2);
-        variable result : sfixed(DATA_WIDTH/2 - 1 downto -DATA_WIDTH/2);
+        variable w_sfixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+        variable lr_sfixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+        variable grad_sfixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+        variable delta : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+        variable result : sfixed(INT_BITS - 1 downto -FRAC_BITS);
     begin
         w_sfixed := to_sfixed(w_old, w_sfixed);
         lr_sfixed := to_sfixed(lr, lr_sfixed);

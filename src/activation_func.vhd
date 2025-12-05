@@ -15,7 +15,7 @@ entity activation_func is
     );
     port(
         input_i : in std_logic_vector(input_width - 1 downto 0);
-        output_o : out sfixed((output_width + 1) / 2 - 1 downto - (output_width / 2)) := (others => '0')
+        output_o : out sfixed(INT_BITS - 1 downto -FRAC_BITS) := (others => '0')
     );
 end entity activation_func;
 

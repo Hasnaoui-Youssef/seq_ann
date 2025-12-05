@@ -11,7 +11,6 @@ end entity neuron_tb;
 
 architecture testbench of neuron_tb is
     constant NUM_INPUTS_C : integer := 4;
-    constant DATA_WIDTH_C : integer := 32;
     constant USE_SIGMOID_C : boolean := true;
     constant TOLERANCE_C : real := 0.023438;
     constant CLK_PERIOD : time := 10 ns;
@@ -21,17 +20,17 @@ architecture testbench of neuron_tb is
     
     -- Forward pass signals
     signal fwd_en : std_logic := '0';
-    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
-    signal weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
-    signal bias_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
-    signal output_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0);
+    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH - 1 downto 0);
+    signal weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH - 1 downto 0);
+    signal bias_s : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal output_s : std_logic_vector(DATA_WIDTH - 1 downto 0);
     
     -- Backward pass signals (not used in forward-only test)
     signal bwd_en : std_logic := '0';
-    signal error_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
-    signal grad_weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
-    signal grad_bias_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0);
-    signal grad_inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
+    signal error_s : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal grad_weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH - 1 downto 0);
+    signal grad_bias_s : std_logic_vector(DATA_WIDTH - 1 downto 0);
+    signal grad_inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH - 1 downto 0);
 
     -- Test vectors
     type real_array is array (integer range <>) of real;
@@ -120,14 +119,14 @@ begin
         variable fail_count : integer := 0;
         variable expected_sigmoid : real;
         variable output_real : real;
-        variable input_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-        variable weight_fixed : sfixed((DATA_WIDTH_C  + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-        variable output_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
+        variable input_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+        variable weight_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+        variable output_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
     begin
         report "========================================";
         report "Starting Neuron Test";
         report "Num Inputs: " & integer'image(NUM_INPUTS_C);
-        report "Data Width: " & integer'image(DATA_WIDTH_C);
+        report "Data Width: " & integer'image(DATA_WIDTH);
         if USE_SIGMOID_C then
             report "Activation: Sigmoid";
         else

@@ -53,8 +53,8 @@ architecture rtl of layer is
 
     -- Helper to sum gradients for a specific input across all neurons
     function sum_input_grads(input_idx : integer; grads : input_grad_array) return std_logic_vector is
-        variable sum : sfixed(DATA_WIDTH/2 - 1 downto -DATA_WIDTH/2) := (others => '0');
-        variable val : sfixed(DATA_WIDTH/2 - 1 downto -DATA_WIDTH/2);
+        variable sum : sfixed(INT_BITS - 1 downto -FRAC_BITS) := (others => '0');
+        variable val : sfixed(INT_BITS - 1 downto -FRAC_BITS);
     begin
         for i in 0 to LAYER_SIZE - 1 loop
             val := to_sfixed(grads(i)(input_idx), val);

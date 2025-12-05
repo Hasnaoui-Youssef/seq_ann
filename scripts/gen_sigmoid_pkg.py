@@ -23,8 +23,8 @@ use ieee.fixed_pkg.all;
     package sigmoid_lut_pkg is
         constant LUT_SIZE : integer := {config.lut_size};
         constant LUT_BITS : integer := {config.lut_bits};
-        constant INPUT_WIDTH : integer := {config.input_width};
-        constant OUTPUT_WIDTH : integer := {config.output_width};
+        constant INPUT_WIDTH : integer := {config.data_width};
+        constant OUTPUT_WIDTH : integer := {config.data_width};
         constant INDEX_HIGH : integer := {high_bit};
         constant INDEX_LOW : integer := {low_bit};
         constant INDEX_WIDTH : integer := INDEX_HIGH - INDEX_LOW + 1;
@@ -84,10 +84,10 @@ def main():
     )
     parser.add_argument('--lut-size', type=int, default=256,
                         help='Number of LUT entries (default: 256)')
-    parser.add_argument('--input-width', type=int, default=32,
-                        help='Input width in bits (default: 32)')
-    parser.add_argument('--output-width', type=int, default=32,
-                        help='Output width in bits (default: 32)')
+    parser.add_argument('--data-width', type=int, default=32,
+                        help='Data width in bits (default: 32)')
+    parser.add_argument('--frac-bits', type=int, default=16,
+                        help='Fractional bits (default: 16)')
     parser.add_argument('--input-min', type=float, default=-8.0,
                         help='Minimum input value (default: -8.0)')
     parser.add_argument('--input-max', type=float, default=8.0,
@@ -98,8 +98,8 @@ def main():
     # Create configuration
     config = SigmoidConfig(
         lut_size=args.lut_size,
-        input_width=args.input_width,
-        output_width=args.output_width,
+        data_width=args.data_width,
+        frac_bits=args.frac_bits,
         input_range=(args.input_min, args.input_max)
     )
 
@@ -107,8 +107,8 @@ def main():
     print("Sigmoid Package Generation")
     print("=" * 60)
     print(f"LUT Size: {config.lut_size} entries ({config.lut_bits} bits)")
-    print(f"Input Width: {config.input_width} bits")
-    print(f"Output Width: {config.output_width} bits")
+    print(f"Input Width: {config.data_width} bits")
+    print(f"Output Width: {config.data_width} bits")
     print("=" * 60)
 
     # Generate LUT

@@ -5,14 +5,9 @@ import math
 from pathlib import Path
 from config import SigmoidConfig, sigmoid
 
-def get_sfixed_range(width, frac_width=None):
-    if frac_width is None:
-        high = (width + 1) // 2 - 1
-        low = -(width // 2)
-    else:
-        high = width - frac_width - 1
-        low = -frac_width
-    return high, low
+def get_sfixed_range(config):
+    """Get sfixed range using INT_BITS and FRAC_BITS from config"""
+    return config.int_bits - 1, -config.frac_bits
 
 def generate_activation_func_tb(config : SigmoidConfig, output_file="testbench/activation_func_tb.vhd"):
     """Generate VHDL testbench for sigmoid activation function"""
@@ -26,8 +21,7 @@ def generate_activation_func_tb(config : SigmoidConfig, output_file="testbench/a
         expected = sigmoid(x)
         test_vectors.append((x, expected))
 
-    in_high, in_low = get_sfixed_range(config.input_width, config.input_frac_width)
-    out_high, out_low = get_sfixed_range(config.output_width)
+    sfixed_high, sfixed_low = get_sfixed_range(config)
 
     vhdl_code = f"""library ieee;
 use ieee.std_logic_1164.all;
@@ -44,22 +38,22 @@ architecture testbench of activation_func_tb is
     -- Component declaration
     component activation_func is
         generic(
-            input_width : integer := {config.input_width};
-            input_frac_width : integer := {config.input_frac_width};
-            output_width : integer := {config.output_width}
+            input_width : integer := {config.data_width};
+            input_frac_width : integer := {config.frac_bits};
+            output_width : integer := {config.data_width}
         );
         port(
             input_i : in std_logic_vector(input_width - 1 downto 0);
-            output_o : out sfixed((output_width + 1) / 2 - 1 downto - (output_width / 2))
+            output_o : out sfixed(INT_BITS - 1 downto -FRAC_BITS)
         );
     end component;
 
     -- Test signals
-    signal input_s : std_logic_vector({config.input_width} - 1 downto 0);
-    signal output_s : sfixed({out_high} downto {out_low});
+    signal input_s : std_logic_vector(DATA_WIDTH - 1 downto 0);
+    signal output_s : sfixed(INT_BITS - 1 downto -FRAC_BITS);
 
     -- Helper signals
-    signal input_sfixed : sfixed({in_high} downto {in_low});
+    signal input_sfixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
     signal input_real : real;
     signal output_real : real;
 
@@ -97,9 +91,9 @@ begin
     -- DUT instantiation (sigmoid architecture)
     dut: entity work.activation_func(sigmoid)
         generic map(
-            input_width => {config.input_width},
-            input_frac_width => {config.input_frac_width},
-            output_width => {config.output_width}
+            input_width => DATA_WIDTH,
+            input_frac_width => FRAC_BITS,
+            output_width => DATA_WIDTH
         )
         port map(
             input_i => input_s,
@@ -120,8 +114,8 @@ begin
         report "========================================";
         report "Starting Sigmoid Activation Function Test";
         report "LUT Size: " & integer'image(LUT_SIZE);
-        report "Input Width: " & integer'image({config.input_width});
-        report "Output Width: " & integer'image({config.output_width});
+        report "Input Width: " & integer'image(DATA_WIDTH);
+        report "Output Width: " & integer'image(DATA_WIDTH);
         report "========================================";
 
         -- Run tests
@@ -199,7 +193,6 @@ end entity neuron_tb;
 
 architecture testbench of neuron_tb is
     constant NUM_INPUTS_C : integer := 4;
-    constant DATA_WIDTH_C : integer := {config.input_width};
     constant USE_SIGMOID_C : boolean := true;
     constant TOLERANCE_C : real := {tolerance:.6f};
     constant CLK_PERIOD : time := 10 ns;
@@ -209,17 +202,17 @@ architecture testbench of neuron_tb is
     
     -- Forward pass signals
     signal fwd_en : std_logic := '0';
-    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
-    signal weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
-    signal bias_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
-    signal output_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0);
+    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH - 1 downto 0);
+    signal weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH - 1 downto 0);
+    signal bias_s : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal output_s : std_logic_vector(DATA_WIDTH - 1 downto 0);
     
     -- Backward pass signals (not used in forward-only test)
     signal bwd_en : std_logic := '0';
-    signal error_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
-    signal grad_weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
-    signal grad_bias_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0);
-    signal grad_inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
+    signal error_s : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal grad_weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH - 1 downto 0);
+    signal grad_bias_s : std_logic_vector(DATA_WIDTH - 1 downto 0);
+    signal grad_inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH - 1 downto 0);
 
     -- Test vectors
     type real_array is array (integer range <>) of real;
@@ -308,14 +301,14 @@ begin
         variable fail_count : integer := 0;
         variable expected_sigmoid : real;
         variable output_real : real;
-        variable input_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-        variable weight_fixed : sfixed((DATA_WIDTH_C  + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-        variable output_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
+        variable input_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+        variable weight_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+        variable output_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
     begin
         report "========================================";
         report "Starting Neuron Test";
         report "Num Inputs: " & integer'image(NUM_INPUTS_C);
-        report "Data Width: " & integer'image(DATA_WIDTH_C);
+        report "Data Width: " & integer'image(DATA_WIDTH);
         if USE_SIGMOID_C then
             report "Activation: Sigmoid";
         else
@@ -470,20 +463,19 @@ architecture testbench of layer_tb is
     -- Configuration
     constant NUM_INPUTS : integer := 4;
     constant NUM_OUTPUTS : integer := 2;
-    constant DATA_WIDTH_C : integer := {config.input_width};
     constant USE_SIGMOID_C : boolean := true;
     constant TOLERANCE_C : real := {tolerance:.6f};
     constant CLK_PERIOD : time := 10 ns;
 
     -- Signals
     signal clk : std_logic := '0';
-    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH_C - 1 downto 0);
-    signal output_s : std_logic_bus_array(0 to NUM_OUTPUTS - 1)(DATA_WIDTH_C - 1 downto 0);
+    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
+    signal output_s : std_logic_bus_array(0 to NUM_OUTPUTS - 1)(DATA_WIDTH - 1 downto 0);
     
     -- Weight loading
     signal load_enable : std_logic := '0';
     signal neuron_select : integer := 0;
-    signal weight_data : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
+    signal weight_data : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
     signal weight_index : integer := 0;
 
 begin
@@ -515,8 +507,8 @@ begin
 
     -- Test Process
     test_proc: process
-        variable input_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-        variable weight_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
+        variable input_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+        variable weight_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
         variable output_real : real;
         variable pass_count : integer := 0;
         variable fail_count : integer := 0;
@@ -639,12 +631,10 @@ def main():
     )
     parser.add_argument('--lut-size', type=int, default=256,
                         help='Number of LUT entries (default: 256)')
-    parser.add_argument('--input-width', type=int, default=32,
-                        help='Input width in bits (default: 32)')
-    parser.add_argument('--input-frac-width', type=int, default=16,
-                        help='Input fractional width in bits (default: 16)')
-    parser.add_argument('--output-width', type=int, default=32,
-                        help='Output width in bits (default: 32)')
+    parser.add_argument('--data-width', type=int, default=32,
+                        help='Data width in bits (default: 32)')
+    parser.add_argument('--frac-bits', type=int, default=16,
+                        help='Fractional bits (default: 16)')
     parser.add_argument('--num-tests', type=int, default=16,
                         help='Number of test vectors (default: 16)')
     parser.add_argument('--input-min', type=float, default=-8.0,
@@ -657,9 +647,8 @@ def main():
     # Create configuration
     config = SigmoidConfig(
         lut_size=args.lut_size,
-        input_width=args.input_width,
-        input_frac_width=args.input_frac_width,
-        output_width=args.output_width,
+        data_width=args.data_width,
+        frac_bits=args.frac_bits,
         num_test_inputs=args.num_tests,
         input_range=(args.input_min, args.input_max)
     )

@@ -9,7 +9,7 @@ end entity xor_tb;
 
 architecture testbench of xor_tb is
     -- Configuration
-    constant CLK_PERIOD : time := 10 ns;
+    constant CLK_PERIOD : time := 100 ns;
     constant DATA_WIDTH : integer := 32;
     constant TOLERANCE_C : real := 0.1;
 
@@ -37,13 +37,13 @@ architecture testbench of xor_tb is
     -- Helper to convert real to std_logic_vector
     function to_slv(r : real) return std_logic_vector is
     begin
-        return to_std_logic_vector(to_sfixed(r, DATA_WIDTH/2 - 1, -DATA_WIDTH/2));
+        return to_std_logic_vector(to_sfixed(r, INT_BITS - 1, -FRAC_BITS));
     end function;
 
     -- Helper to convert std_logic_vector to real
     function to_real_val(slv : std_logic_vector) return real is
     begin
-        return to_real(to_sfixed(slv, DATA_WIDTH/2 - 1, -DATA_WIDTH/2));
+        return to_real(to_sfixed(slv, INT_BITS - 1, -FRAC_BITS));
     end function;
 
 begin
@@ -99,19 +99,19 @@ begin
             wait until rising_edge(clk);
             start <= '1';
             train_mode <= '0';
-            
+
             -- Send Input 1
             input_data <= to_slv(in1);
             input_valid <= '1';
             input_last <= '0';
             wait until rising_edge(clk);
-            
+
             -- Send Input 2
             input_data <= to_slv(in2);
             input_valid <= '1';
             input_last <= '1';
             wait until rising_edge(clk);
-            
+
             input_valid <= '0';
             input_last <= '0';
             start <= '0';
@@ -119,14 +119,14 @@ begin
             -- Wait for Output
             wait until output_valid = '1';
             wait until rising_edge(clk); -- Wait one more cycle for data to settle
-            
-            report "Input: " & real'image(in1) & ", " & real'image(in2) & 
-                   " | Output: " & real'image(to_real_val(output_data)) & 
+
+            report "Input: " & real'image(in1) & ", " & real'image(in2) &
+                   " | Output: " & real'image(to_real_val(output_data)) &
                    " | Expected: " & real'image(expected);
-                   
+
             assert abs(to_real_val(output_data) - expected) < TOLERANCE_C
                 report "Test Failed!" severity error;
-                
+
             -- TODO: Wait for 'done' signal once calc_done is implemented in calculation_unit
             -- Currently calc_done is hardcoded to '0' in neural_network.vhd
             wait until rising_edge(clk);
@@ -164,7 +164,7 @@ begin
         run_inference(0.0, 1.0, 1.0); -- 0 XOR 1 = 1
         run_inference(1.0, 0.0, 1.0); -- 1 XOR 0 = 1
         run_inference(1.0, 1.0, 0.0); -- 1 XOR 1 = 0
-        
+
         report "Test Complete";
         wait;
     end process;

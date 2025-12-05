@@ -132,7 +132,7 @@ def generate_weight_loading_vhdl(layer_params, data_width=32, frac_bits=16):
                 
                 vhdl_code.append(f"    layer_{layer_idx}_select <= {neuron_idx};")
                 vhdl_code.append(f"    weight_index <= {weight_idx};")
-                vhdl_code.append(f'    weight_data <= std_logic_vector(to_signed({fixed_val}, {data_width}));')
+                vhdl_code.append(f'    weight_data <= std_logic_vector(to_signed({fixed_val}, DATA_WIDTH));')
                 vhdl_code.append(f"    load_enable <= '1';")
                 vhdl_code.append(f"    wait until rising_edge(clk);")
                 vhdl_code.append("")
@@ -144,7 +144,7 @@ def generate_weight_loading_vhdl(layer_params, data_width=32, frac_bits=16):
             vhdl_code.append(f"    -- Bias for neuron {neuron_idx}")
             vhdl_code.append(f"    layer_{layer_idx}_select <= {neuron_idx};")
             vhdl_code.append(f"    weight_index <= {num_inputs};  -- Bias index")
-            vhdl_code.append(f'    weight_data <= std_logic_vector(to_signed({fixed_bias}, {data_width}));')
+            vhdl_code.append(f'    weight_data <= std_logic_vector(to_signed({fixed_bias}, DATA_WIDTH));')
             vhdl_code.append(f"    load_enable <= '1';")
             vhdl_code.append(f"    wait until rising_edge(clk);")
             vhdl_code.append("")
@@ -250,18 +250,18 @@ def generate_neural_network_testbench(model_name, layer_params, test_inputs, tes
             # Load weights
             for weight_idx in range(num_inputs_layer):
                 weight_val = weights[weight_idx, neuron_idx]
-                fixed_val = float_to_fixed(weight_val, config.input_frac_width)
+                fixed_val = float_to_fixed(weight_val, config.frac_bits)
                 
                 weight_loading_vhdl.append(f"    weight_index <= {weight_idx};")
-                weight_loading_vhdl.append(f'    weight_data <= std_logic_vector(to_signed({fixed_val}, {config.input_width}));')
+                weight_loading_vhdl.append(f'    weight_data <= std_logic_vector(to_signed({fixed_val}, DATA_WIDTH));')
                 weight_loading_vhdl.append(f"    wait until rising_edge(clk);")
             
             # Load bias
             bias_val = biases[neuron_idx]
-            fixed_bias = float_to_fixed(bias_val, config.input_frac_width)
+            fixed_bias = float_to_fixed(bias_val, config.frac_bits)
             
             weight_loading_vhdl.append(f"    weight_index <= {num_inputs_layer};  -- Bias")
-            weight_loading_vhdl.append(f'    weight_data <= std_logic_vector(to_signed({fixed_bias}, {config.input_width}));')
+            weight_loading_vhdl.append(f'    weight_data <= std_logic_vector(to_signed({fixed_bias}, DATA_WIDTH));')
             weight_loading_vhdl.append(f"    wait until rising_edge(clk);")
             weight_loading_vhdl.append("")
     
@@ -277,8 +277,8 @@ def generate_neural_network_testbench(model_name, layer_params, test_inputs, tes
         
         # Set inputs
         for input_idx, input_val in enumerate(test_input):
-            fixed_val = float_to_fixed(input_val, config.input_frac_width)
-            test_vector_vhdl.append(f"    inputs({input_idx}) <= std_logic_vector(to_signed({fixed_val}, {config.input_width}));")
+            fixed_val = float_to_fixed(input_val, config.frac_bits)
+            test_vector_vhdl.append(f"    inputs({input_idx}) <= std_logic_vector(to_signed({fixed_val}, DATA_WIDTH));")
         
         # Wait for computation (num_layers + 3 cycles for pipeline)
         wait_cycles = num_layers + 3
@@ -317,7 +317,6 @@ architecture testbench of {entity_name} is
     -- Configuration
     constant NUM_INPUTS : integer := {num_inputs};
     constant NUM_OUTPUTS : integer := {num_outputs};
-    constant DATA_WIDTH : integer := {config.input_width};
     constant TOLERANCE_C : real := {tolerance:.6f};
     
     -- Layer configuration
@@ -341,7 +340,7 @@ architecture testbench of {entity_name} is
     signal ready : std_logic;
     
     -- Test signals
-    signal output_fixed : sfixed((DATA_WIDTH + 1) / 2 - 1 downto -(DATA_WIDTH / 2));
+    signal output_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
 
 begin
     -- ========================================================================
@@ -523,9 +522,8 @@ def main():
     
     # Create config
     config = SigmoidConfig(
-        input_width=args.data_width,
-        input_frac_width=args.frac_bits,
-        output_width=args.data_width
+        data_width=args.data_width,
+        frac_bits=args.frac_bits
     )
     
     # Generate testbench

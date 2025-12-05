@@ -26,7 +26,24 @@ end bram;
 architecture syn of bram is
 type ram_type is array (2**ADDR_WIDTH - 1 downto 0) of std_logic_vector(DATA_WIDTH - 1 downto 0);
 shared variable RAM : ram_type;
+
+-- Debug signal to make RAM visible in waveform viewer
+-- synthesis translate_off
+signal ram_debug : ram_type := (others => (others => '0'));
+-- synthesis translate_on
+
 begin
+
+-- synthesis translate_off
+-- Mirror RAM to signal for waveform visibility (simulation only)
+process(CLKA)
+    begin
+        if rising_edge(CLKA) then
+            ram_debug <= RAM;
+        end if;
+end process;
+-- synthesis translate_on
+
 process(CLKA)
     begin
     if CLKA'event and CLKA = '1' then

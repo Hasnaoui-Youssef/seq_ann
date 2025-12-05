@@ -12,20 +12,19 @@ architecture testbench of layer_tb is
     -- Configuration
     constant NUM_INPUTS : integer := 4;
     constant NUM_OUTPUTS : integer := 2;
-    constant DATA_WIDTH_C : integer := 32;
     constant USE_SIGMOID_C : boolean := true;
     constant TOLERANCE_C : real := 0.031250;
     constant CLK_PERIOD : time := 10 ns;
 
     -- Signals
     signal clk : std_logic := '0';
-    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH_C - 1 downto 0);
-    signal output_s : std_logic_bus_array(0 to NUM_OUTPUTS - 1)(DATA_WIDTH_C - 1 downto 0);
+    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
+    signal output_s : std_logic_bus_array(0 to NUM_OUTPUTS - 1)(DATA_WIDTH - 1 downto 0);
     
     -- Weight loading
     signal load_enable : std_logic := '0';
     signal neuron_select : integer := 0;
-    signal weight_data : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
+    signal weight_data : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
     signal weight_index : integer := 0;
 
 begin
@@ -57,8 +56,8 @@ begin
 
     -- Test Process
     test_proc: process
-        variable input_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-        variable weight_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
+        variable input_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+        variable weight_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
         variable output_real : real;
         variable pass_count : integer := 0;
         variable fail_count : integer := 0;

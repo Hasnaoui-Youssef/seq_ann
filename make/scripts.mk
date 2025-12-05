@@ -16,14 +16,14 @@ generate-pkg:
 	@echo "Generating sigmoid LUT package..."
 	@$(PYTHON) scripts/gen_sigmoid_pkg.py \
 		--lut-size $(LUT_SIZE) \
-		--input-width $(DATA_WIDTH) \
-		--output-width $(DATA_WIDTH)
+		--data-width $(DATA_WIDTH) \
+		--frac-bits $(FRAC_BITS)
 
 generate-tb:
 	@echo "Generating testbenches..."
 	@$(PYTHON) scripts/gen_testbenches.py \
-		--input-width $(DATA_WIDTH) \
-		--input-frac-width $(FRAC_BITS) \
+		--data-width $(DATA_WIDTH) \
+		--frac-bits $(FRAC_BITS) \
 		--num-tests $(NUM_TESTS)
 
 generate-nn-tb:
