@@ -97,6 +97,11 @@ architecture rtl of memory_control_unit is
         return to_std_logic_vector(result);
     end function;
 
+
+    -- Pipeline and Output Process
+    -- Additional signals for edge detection
+    signal read_req_prev : std_logic := '0';
+    signal read_req_d2 : std_logic := '0';
 begin
 
     -- Instantiate BRAM
@@ -144,6 +149,7 @@ begin
     process(host_write_en, host_addr, host_data_in, update_en_d1, update_addr_d1, update_data_d1, lr_d1, update_grad_d1)
     begin
         if host_write_en = '1' then
+            report "MemCtrl Write: addr=" & integer'image(host_addr) & " data=" & to_hstring(host_data_in);
             bram_wea <= '1';
             if host_addr >= 0 and host_addr < 2**ADDR_WIDTH then
                 bram_addra <= std_logic_vector(to_unsigned(host_addr, ADDR_WIDTH));
@@ -171,10 +177,23 @@ begin
     process(clk)
     begin
         if rising_edge(clk) then
+            -- Debug
+            if read_req = '1' or read_req_d1 = '1' or read_req_d2 = '1' or read_valid = '1' then
+                report "MemCtrl Debug: read_req=" & std_logic'image(read_req) &
+                       " read_req_prev=" & std_logic'image(read_req_prev) &
+                       " read_req_d1=" & std_logic'image(read_req_d1) &
+                       " read_req_d2=" & std_logic'image(read_req_d2) &
+                       " read_valid=" & std_logic'image(read_valid) &
+                       " bram_dob=" & to_hstring(bram_dob) &
+                       " addrb=" & to_hstring(bram_addrb);
+            end if;
+            
             if rst = '1' then
                 update_en_d1 <= '0';
                 read_valid <= '0';
                 read_req_d1 <= '0';
+                read_req_d2 <= '0';
+                read_req_prev <= '0';
             else
                 -- Pipeline Update Signals (Stage 1)
                 update_en_d1 <= update_en;
@@ -185,20 +204,25 @@ begin
                 -- Capture Read Data (for Update)
                 update_data_d1 <= bram_dob;
 
-                -- Read Request Pipeline
-                -- Only latch read request if not preempted by update
-                if read_req = '1' and update_en = '0' then
+                -- Read Request Edge Detection
+                -- Detect rising edge of read_req for proper request handshaking
+                read_req_prev <= read_req;
+                
+                -- Stage 1: Set when rising edge detected
+                if read_req = '1' and read_req_prev = '0' and update_en = '0' then
                     read_req_d1 <= '1';
                 else
                     read_req_d1 <= '0';
                 end if;
+                
+                -- Stage 2: Pipeline delay for BRAM
+                read_req_d2 <= read_req_d1;
 
                 -- Read Valid Logic
-                -- Data is valid 1 cycle after BRAM address sample (which happens when read_req_d1 is latched)
-                -- So when read_req_d1 is 1, bram_dob holds the data.
-                if read_req_d1 = '1' then
+                -- Data is valid 2 cycles after request edge
+                if read_req_d2 = '1' then
                     read_valid <= '1';
-                    read_data_out <= bram_dob; -- Register output
+                    read_data_out <= bram_dob;
                 else
                     read_valid <= '0';
                 end if;

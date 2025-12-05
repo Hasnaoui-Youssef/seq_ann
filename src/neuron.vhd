@@ -67,6 +67,9 @@ architecture rtl of neuron is
 
 begin
 
+    -- Output is registered value
+    output_o <= stored_output_reg;
+
     -- Instantiate Activation Function
     u_act: entity work.activation_func(sigmoid)
         generic map (
@@ -83,7 +86,6 @@ begin
         variable delta : std_logic_vector(DATA_WIDTH - 1 downto 0); -- dL/dy * f'(net)
     begin
         if rst = '1' then
-            output_o <= (others => '0');
             stored_output_reg <= (others => '0');
             stored_deriv <= (others => '0');
             grad_bias_o <= (others => '0');
@@ -103,7 +105,6 @@ begin
                 else
                     stored_output_reg <= to_std_logic_vector(sum_sig);
                 end if;
-                output_o <= stored_output_reg; 
                 
                 -- Derivative: y * (1 - y)
                 -- stored_deriv <= calc_sigmoid_deriv(stored_output_reg);

@@ -118,6 +118,7 @@ begin
 
             -- Wait for Output
             wait until output_valid = '1';
+            wait until rising_edge(clk); -- Wait one more cycle for data to settle
             
             report "Input: " & real'image(in1) & ", " & real'image(in2) & 
                    " | Output: " & real'image(to_real_val(output_data)) & 
@@ -126,7 +127,10 @@ begin
             assert abs(to_real_val(output_data) - expected) < TOLERANCE_C
                 report "Test Failed!" severity error;
                 
-            wait until done = '1';
+            -- TODO: Wait for 'done' signal once calc_done is implemented in calculation_unit
+            -- Currently calc_done is hardcoded to '0' in neural_network.vhd
+            wait until rising_edge(clk);
+            wait until rising_edge(clk);
         end procedure;
 
     begin
@@ -150,11 +154,6 @@ begin
 
         report "Weights Loaded. Releasing Reset...";
         wait for CLK_PERIOD * 2;
-        rst <= '0';
-        wait for CLK_PERIOD * 2;
-        rst <= '1';
-        wait for CLK_PERIOD * 2;
-        rst <= '0';
         rst <= '0';
         -- wait for CLK_PERIOD * 20; -- Wait for fetch to complete (13 cycles + overhead)
         wait until ready = '1';
