@@ -14,38 +14,58 @@ def generate_sigmoid_lut(config : SigmoidConfig):
 
     return lut
 
+def float_to_fixed_bin(value, int_bits, frac_bits):
+    """Convert float to fixed-point binary string for VHDL."""
+    total_bits = int_bits + frac_bits
+    scale = 2 ** frac_bits
+    fixed_val = int(round(value * scale))
+    
+    # Handle negative values (two's complement)
+    if fixed_val < 0:
+        fixed_val = (1 << total_bits) + fixed_val
+    
+    # Clamp to valid range
+    max_val = (1 << total_bits) - 1
+    fixed_val = max(0, min(fixed_val, max_val))
+    
+    return f'"{fixed_val:0{total_bits}b}"'
+
 def generate_vhdl_lut_package(config : SigmoidConfig, lut, output_file="src/sigmoid_lut_pkg.vhd"):
     high_bit, low_bit = config.get_index_range()
+    int_bits = config.int_bits
+    frac_bits = config.frac_bits
+    
     vhdl_code = f"""library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.fixed_pkg.all;
-    package sigmoid_lut_pkg is
-        constant LUT_SIZE : integer := {config.lut_size};
-        constant LUT_BITS : integer := {config.lut_bits};
-        constant INPUT_WIDTH : integer := {config.data_width};
-        constant OUTPUT_WIDTH : integer := {config.data_width};
-        constant INDEX_HIGH : integer := {high_bit};
-        constant INDEX_LOW : integer := {low_bit};
-        constant INDEX_WIDTH : integer := INDEX_HIGH - INDEX_LOW + 1;
-        constant INPUT_MAX : real := {config.input_range[1]};
-        constant INPUT_MIN : real := {config.input_range[0]};
-        constant SCALE_FACTOR : real := (real(LUT_SIZE) - 1.0) / (INPUT_MAX - INPUT_MIN);
 
-        type sigmoid_lut_type is array(0 to LUT_SIZE - 1) of real;
+use work.types.all;
 
-        constant SIGMOID_LUT : sigmoid_lut_type := (
-    """
+package sigmoid_lut_pkg is
+    constant LUT_SIZE : integer := {config.lut_size};
+    constant LUT_BITS : integer := {config.lut_bits};
+    constant INDEX_HIGH : integer := {high_bit};
+    constant INDEX_LOW : integer := {low_bit};
+    constant INDEX_WIDTH : integer := INDEX_HIGH - INDEX_LOW + 1;
+    constant INPUT_MAX : real := {config.input_range[1]};
+    constant INPUT_MIN : real := {config.input_range[0]};
+    constant SCALE_FACTOR : real := (real(LUT_SIZE) - 1.0) / (INPUT_MAX - INPUT_MIN);
+
+    -- LUT stores fixed-point values directly (sfixed format)
+    type sigmoid_lut_type is array(0 to LUT_SIZE - 1) of sfixed(INT_BITS - 1 downto -FRAC_BITS);
+
+    constant SIGMOID_LUT : sigmoid_lut_type := (
+"""
     for i, (idx, x, sig_val) in enumerate(lut):
-        if i == len(lut) - 1:
-            vhdl_code += f"                {i} => {sig_val:.10f}\n"
-        else:
-            vhdl_code += f"        {i} => {sig_val:.10f},\n"
+        bin_val = float_to_fixed_bin(sig_val, int_bits, frac_bits)
+        comma = "" if i == len(lut) - 1 else ","
+        vhdl_code += f"        {i} => {bin_val}{comma}\n"
 
-    vhdl_code += """        );
+    vhdl_code += """    );
 
 end package sigmoid_lut_pkg;
-    """
+"""
 
     Path(output_file).parent.mkdir(parents = True, exist_ok=True)
     with open(output_file, 'w') as f:

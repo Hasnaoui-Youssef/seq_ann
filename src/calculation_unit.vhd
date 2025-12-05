@@ -5,6 +5,11 @@ use work.types.all;
 use work.pkg_layer.all;
 
 entity calculation_unit is
+    generic (
+        NUM_INPUTS  : integer := 2;  -- Network input size
+        NUM_LAYERS  : integer := 2;  -- Number of layers
+        LAYER_SIZES : layer_config_array  -- Array of layer sizes (e.g., (3, 1) for 2->3->1)
+    );
     port (
         clk : in std_logic;
         rst : in std_logic;
@@ -14,9 +19,7 @@ entity calculation_unit is
         start_store : in std_logic; -- Trigger to write gradients to memory
 
         -- Network Inputs (Forward)
-        input_data  : in std_logic_vector(DATA_WIDTH - 1 downto 0); -- Streaming scalar? 
-                                                                    -- XOR TB sends scalar stream.
-                                                                    -- We need to buffer to vector.
+        input_data  : in std_logic_vector(DATA_WIDTH - 1 downto 0);
         input_valid : in std_logic;
         input_last  : in std_logic;
 
@@ -38,69 +41,108 @@ entity calculation_unit is
         mem_update_en   : out std_logic;
         mem_update_addr : out integer;
         mem_update_grad : out std_logic_vector(DATA_WIDTH - 1 downto 0);
-        
+
         ready : out std_logic -- Indicates weights are loaded
     );
 end entity calculation_unit;
 
 architecture rtl of calculation_unit is
 
-    -- Topology: 2 inputs -> Layer 0 (3 neurons) -> Layer 1 (1 neuron) -> Output
-    
-    -- Signals
-    signal l0_fwd_ctrl : layer_control_t;
-    signal l0_fwd_data : std_logic_bus_array(0 to 1)(DATA_WIDTH - 1 downto 0); -- 2 inputs
-    signal l0_out_ctrl : layer_control_t;
-    signal l0_out_data : std_logic_bus_array(0 to 2)(DATA_WIDTH - 1 downto 0); -- 3 outputs
+    -- Calculate total weights needed for all layers
+    function calc_total_weights return integer is
+        variable total : integer := 0;
+        variable prev_size : integer := NUM_INPUTS;
+    begin
+        for i in LAYER_SIZES'range loop
+            total := total + (prev_size + 1) * LAYER_SIZES(i);  -- weights + bias per neuron
+            prev_size := LAYER_SIZES(i);
+        end loop;
+        return total;
+    end function;
 
-    signal l1_out_ctrl : layer_control_t;
-    signal l1_out_data : std_logic_bus_array(0 to 0)(DATA_WIDTH - 1 downto 0); -- 1 output
+    -- Calculate weight offset for a specific layer
+    function calc_layer_weight_offset(layer_idx : integer) return integer is
+        variable offset : integer := 0;
+        variable prev_size : integer := NUM_INPUTS;
+    begin
+        for i in 0 to layer_idx - 1 loop
+            offset := offset + (prev_size + 1) * LAYER_SIZES(i);
+            prev_size := LAYER_SIZES(i);
+        end loop;
+        return offset;
+    end function;
+
+    -- Get input size for a layer
+    function get_layer_input_size(layer_idx : integer) return integer is
+    begin
+        if layer_idx = 0 then
+            return NUM_INPUTS;
+        else
+            return LAYER_SIZES(layer_idx - 1);
+        end if;
+    end function;
+
+    -- Maximum layer size (for signal array sizing)
+    function max_layer_size return integer is
+        variable max_size : integer := NUM_INPUTS;
+    begin
+        for i in LAYER_SIZES'range loop
+            if LAYER_SIZES(i) > max_size then
+                max_size := LAYER_SIZES(i);
+            end if;
+        end loop;
+        return max_size;
+    end function;
+
+    -- Constants
+    constant TOTAL_WEIGHTS : integer := calc_total_weights;
+    constant OUTPUT_SIZE   : integer := LAYER_SIZES(NUM_LAYERS - 1);
+    constant MAX_SIZE      : integer := max_layer_size;
+
+    -- Inter-layer signals (control and data between layers)
+    type ctrl_array_t is array (0 to NUM_LAYERS) of layer_control_t;
+    type data_array_t is array (0 to NUM_LAYERS) of std_logic_bus_array(0 to MAX_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+
+    signal fwd_ctrl : ctrl_array_t;
+    signal fwd_data : data_array_t;
+    signal bwd_ctrl : ctrl_array_t;
+    signal bwd_data : data_array_t;
+
+    -- Weight storage (flat array for all layers)
+    signal all_weights : std_logic_bus_array(0 to TOTAL_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
+    signal all_grads   : std_logic_bus_array(0 to TOTAL_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
 
     -- Weight Fetching State Machine
     type state_t is (IDLE, FETCH_REQUEST, FETCH_WAIT, WEIGHTS_READY, STORE_GRADIENTS);
     signal state : state_t := IDLE;
     signal fetch_addr : integer := 0;
-    signal fetch_layer : integer := 0; -- 0 for L0, 1 for L1
-    signal fetch_idx : integer := 0;   -- Index within layer weights
-    
-    constant L0_WEIGHT_COUNT : integer := (2+1)*3;
-    constant L1_WEIGHT_COUNT : integer := (3+1)*1;
-
-    signal l0_weights : std_logic_bus_array(0 to L0_WEIGHT_COUNT - 1)(DATA_WIDTH - 1 downto 0);
-    signal l1_weights : std_logic_bus_array(0 to L1_WEIGHT_COUNT - 1)(DATA_WIDTH - 1 downto 0);
-
-    -- Gradient Buffer
-    signal l0_grad_weights : std_logic_bus_array(0 to L0_WEIGHT_COUNT - 1)(DATA_WIDTH - 1 downto 0);
-    signal l1_grad_weights : std_logic_bus_array(0 to L1_WEIGHT_COUNT - 1)(DATA_WIDTH - 1 downto 0);
     signal store_idx : integer := 0;
-    signal store_layer : integer := 0;
-
 
 begin
 
-    -- Input Buffering (Stream -> Parallel)
+    -- Input Buffering (Stream -> Parallel for first layer)
     process(clk)
         variable idx : integer := 0;
     begin
         if rising_edge(clk) then
-            report "Calc Unit Debug: input_valid=" & std_logic'image(input_valid) & 
-                   " l0_valid=" & std_logic'image(l0_fwd_ctrl.valid) & " l0_last=" & std_logic'image(l0_fwd_ctrl.last) &
-                   " l1_valid=" & std_logic'image(l1_out_ctrl.valid) & " l1_last=" & std_logic'image(l1_out_ctrl.last);
-            
-            if input_valid = '1' then
-                l0_fwd_data(idx) <= input_data;
-                if idx = 1 then
+            if rst = '1' then
+                idx := 0;
+                fwd_ctrl(0).valid <= '0';
+                fwd_ctrl(0).last <= '0';
+            elsif input_valid = '1' then
+                fwd_data(0)(idx) <= input_data;
+                if idx = NUM_INPUTS - 1 then
                     idx := 0;
-                    l0_fwd_ctrl.valid <= '1';
-                    l0_fwd_ctrl.last <= input_last; -- Propagate last signal
+                    fwd_ctrl(0).valid <= '1';
+                    fwd_ctrl(0).last <= input_last;
                 else
                     idx := idx + 1;
-                    l0_fwd_ctrl.valid <= '0';
-                    l0_fwd_ctrl.last <= '0';
+                    fwd_ctrl(0).valid <= '0';
+                    fwd_ctrl(0).last <= '0';
                 end if;
             else
-                l0_fwd_ctrl.valid <= '0';
-                l0_fwd_ctrl.last <= '0';
+                fwd_ctrl(0).valid <= '0';
+                fwd_ctrl(0).last <= '0';
             end if;
         end if;
     end process;
@@ -113,75 +155,43 @@ begin
             mem_read_req <= '0';
             mem_update_en <= '0';
             fetch_addr <= 0;
-            l0_weights <= (others => (others => '0'));
-            l1_weights <= (others => (others => '0'));
+            store_idx <= 0;
+            all_weights <= (others => (others => '0'));
             ready <= '0';
         elsif rising_edge(clk) then
-            -- Debug State Machine
-            if state /= IDLE or mem_read_valid = '1' then
-                 report "Calc State: " & state_t'image(state) & 
-                        " ReadReq=" & std_logic'image(mem_read_req) & 
-                        " ReadValid=" & std_logic'image(mem_read_valid);
-            end if;
-
             case state is
                 when IDLE =>
                     ready <= '0';
-                    -- Auto-load weights on reset/start (simplified)
                     state <= FETCH_REQUEST;
                     fetch_addr <= 0;
-                    fetch_layer <= 0;
-                    fetch_idx <= 0;
                     mem_read_req <= '0';
-                    
+
                 when FETCH_REQUEST =>
-                    -- Send read request
                     mem_read_addr <= fetch_addr;
                     mem_read_req <= '1';
                     state <= FETCH_WAIT;
-                    
+
                 when FETCH_WAIT =>
                     ready <= '0';
-                    mem_read_req <= '0'; -- Clear request (edge-triggered)
-                    
+                    mem_read_req <= '0';
+
                     if mem_read_valid = '1' then
-                        report "Fetch Debug: L=" & integer'image(fetch_layer) & 
-                               " idx=" & integer'image(fetch_idx) & 
-                               " addr=" & integer'image(fetch_addr) &
-                               " data=" & to_hstring(mem_read_data);
-                               
-                        -- Store received weight
-                        if fetch_layer = 0 then
-                            l0_weights(fetch_idx) <= mem_read_data;
-                            if fetch_idx = L0_WEIGHT_COUNT - 1 then
-                                fetch_layer <= 1;
-                                fetch_idx <= 0;
-                                fetch_addr <= fetch_addr + 1;
-                                state <= FETCH_REQUEST;
-                            else
-                                fetch_idx <= fetch_idx + 1;
-                                fetch_addr <= fetch_addr + 1;
-                                state <= FETCH_REQUEST;
-                            end if;
-                        elsif fetch_layer = 1 then
-                            l1_weights(fetch_idx) <= mem_read_data;
-                            if fetch_idx = L1_WEIGHT_COUNT - 1 then
-                                state <= WEIGHTS_READY;
-                            else
-                                fetch_idx <= fetch_idx + 1;
-                                fetch_addr <= fetch_addr + 1;
-                                state <= FETCH_REQUEST;
-                            end if;
+                        all_weights(fetch_addr) <= mem_read_data;
+
+                        if fetch_addr = TOTAL_WEIGHTS - 1 then
+                            state <= WEIGHTS_READY;
+                        else
+                            fetch_addr <= fetch_addr + 1;
+                            state <= FETCH_REQUEST;
                         end if;
                     end if;
-                    
+
                 when WEIGHTS_READY =>
                     mem_read_req <= '0';
                     ready <= '1';
-                    
+
                     if start_store = '1' then
                         state <= STORE_GRADIENTS;
-                        store_layer <= 0;
                         store_idx <= 0;
                         ready <= '0';
                     end if;
@@ -189,66 +199,69 @@ begin
                 when STORE_GRADIENTS =>
                     ready <= '0';
                     mem_update_en <= '1';
-                    
-                    if store_layer = 0 then
-                        mem_update_addr <= store_idx; -- Assuming L0 weights start at 0
-                        mem_update_grad <= l0_grad_weights(store_idx);
-                        
-                        if store_idx = L0_WEIGHT_COUNT - 1 then
-                            store_layer <= 1;
-                            store_idx <= 0;
-                        else
-                            store_idx <= store_idx + 1;
-                        end if;
-                    elsif store_layer = 1 then
-                        mem_update_addr <= L0_WEIGHT_COUNT + store_idx; -- Offset for L1
-                        mem_update_grad <= l1_grad_weights(store_idx);
-                        
-                        if store_idx = L1_WEIGHT_COUNT - 1 then
-                            state <= WEIGHTS_READY;
-                            mem_update_en <= '0';
-                            store_layer <= 0;
-                            store_idx <= 0;
-                        else
-                            store_idx <= store_idx + 1;
-                        end if;
+                    mem_update_addr <= store_idx;
+                    mem_update_grad <= all_grads(store_idx);
+
+                    if store_idx = TOTAL_WEIGHTS - 1 then
+                        state <= WEIGHTS_READY;
+                        mem_update_en <= '0';
+                        store_idx <= 0;
+                    else
+                        store_idx <= store_idx + 1;
                     end if;
             end case;
         end if;
     end process;
 
-    -- Layer 0 (Hidden: 2 -> 3)
-    u_l0: entity work.layer
-        generic map (NUM_INPUTS => 2, LAYER_SIZE => 3)
-        port map (
-            clk => clk, rst => rst,
-            fwd_en => not mode, bwd_en => mode,
-            fwd_ctrl_in => l0_fwd_ctrl, fwd_data_in => l0_fwd_data,
-            fwd_ctrl_out => l0_out_ctrl, fwd_data_out => l0_out_data,
-            bwd_ctrl_in => (valid=>'0', last=>'0'), bwd_error_in => (others=>(others=>'0')),
-            weights_in => l0_weights
-            -- grads_out => ...
-        );
+    -- Generate Layers
+    gen_layers: for i in 0 to NUM_LAYERS - 1 generate
+        constant THIS_INPUT_SIZE  : integer := get_layer_input_size(i);
+        constant THIS_OUTPUT_SIZE : integer := LAYER_SIZES(i);
+        constant THIS_WEIGHT_COUNT: integer := (THIS_INPUT_SIZE + 1) * THIS_OUTPUT_SIZE;
+        constant WEIGHT_OFFSET    : integer := calc_layer_weight_offset(i);
 
-    -- Layer 1 (Output: 3 -> 1)
-    u_l1: entity work.layer
-        generic map (NUM_INPUTS => 3, LAYER_SIZE => 1)
-        port map (
-            clk => clk, rst => rst,
-            fwd_en => not mode, bwd_en => mode,
-            fwd_ctrl_in => l0_out_ctrl, fwd_data_in => l0_out_data,
-            fwd_ctrl_out => l1_out_ctrl, fwd_data_out => l1_out_data,
-            bwd_ctrl_in => (valid=>'0', last=>'0'), bwd_error_in => (others=>(others=>'0')),
-            weights_in => l1_weights
-        );
+        signal layer_weights : std_logic_bus_array(0 to THIS_WEIGHT_COUNT - 1)(DATA_WIDTH - 1 downto 0);
+        signal layer_grads   : std_logic_bus_array(0 to THIS_WEIGHT_COUNT - 1)(DATA_WIDTH - 1 downto 0);
+    begin
+        -- Map weights from flat array to layer
+        gen_weight_map: for w in 0 to THIS_WEIGHT_COUNT - 1 generate
+            layer_weights(w) <= all_weights(WEIGHT_OFFSET + w);
+            all_grads(WEIGHT_OFFSET + w) <= layer_grads(w);
+        end generate;
 
-    -- Output
-    output_valid <= l1_out_ctrl.valid;
-    output_last <= l1_out_ctrl.last;
-    output_data <= l1_out_data(0);
+        -- Layer instance
+        u_layer: entity work.layer
+            generic map (
+                NUM_INPUTS => THIS_INPUT_SIZE,
+                LAYER_SIZE => THIS_OUTPUT_SIZE,
+                USE_SIGMOID => true
+            )
+            port map (
+                clk => clk,
+                rst => rst,
+                fwd_en => not mode,
+                bwd_en => mode,
+                fwd_ctrl_in => fwd_ctrl(i),
+                fwd_data_in => fwd_data(i)(0 to THIS_INPUT_SIZE - 1),
+                fwd_ctrl_out => fwd_ctrl(i + 1),
+                fwd_data_out => fwd_data(i + 1)(0 to THIS_OUTPUT_SIZE - 1),
+                bwd_ctrl_in => bwd_ctrl(i + 1),
+                bwd_error_in => bwd_data(i + 1)(0 to THIS_OUTPUT_SIZE - 1),
+                bwd_ctrl_out => bwd_ctrl(i),
+                bwd_error_out => bwd_data(i)(0 to THIS_INPUT_SIZE - 1),
+                weights_in => layer_weights,
+                grads_out => layer_grads
+            );
+    end generate;
 
+    -- Output from last layer
+    output_valid <= fwd_ctrl(NUM_LAYERS).valid;
+    output_last  <= fwd_ctrl(NUM_LAYERS).last;
+    output_data  <= fwd_data(NUM_LAYERS)(0);
 
-
-
+    -- Initialize backward path (no error from output for now)
+    bwd_ctrl(NUM_LAYERS).valid <= '0';
+    bwd_ctrl(NUM_LAYERS).last <= '0';
+    bwd_data(NUM_LAYERS) <= (others => (others => '0'));
 
 end architecture rtl;

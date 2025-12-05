@@ -117,12 +117,11 @@ begin
         );
 
     -- Instantiate Activation Function
-    -- Input width is ACC_OUT_WIDTH, output is DATA_WIDTH
+    -- Input width is ACC_OUT_WIDTH, output is DATA_WIDTH (via types package)
     u_act: entity work.activation_func(sigmoid)
         generic map (
             input_width => ACC_OUT_WIDTH,
-            input_frac_width => FRAC_BITS,
-            output_width => DATA_WIDTH
+            input_frac_width => FRAC_BITS
         )
         port map (
             input_i => acc_sum,

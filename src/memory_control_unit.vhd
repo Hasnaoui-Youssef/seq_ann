@@ -35,28 +35,6 @@ end entity memory_control_unit;
 
 architecture rtl of memory_control_unit is
 
-    -- BRAM Component
-    component bram is
-        generic(
-            DATA_WIDTH : integer := 16;
-            ADDR_WIDTH : integer := 16
-        );
-        port(
-            clka : in std_logic;
-            clkb : in std_logic;
-            ena : in std_logic;
-            enb : in std_logic;
-            wea : in std_logic;
-            web : in std_logic;
-            addra : in std_logic_vector(ADDR_WIDTH - 1 downto 0);
-            addrb : in std_logic_vector(ADDR_WIDTH - 1 downto 0);
-            dia : in std_logic_vector(DATA_WIDTH - 1 downto 0);
-            dib : in std_logic_vector(DATA_WIDTH - 1 downto 0);
-            doa : out std_logic_vector(DATA_WIDTH - 1 downto 0);
-            dob : out std_logic_vector(DATA_WIDTH - 1 downto 0)
-        );
-    end component;
-
     -- BRAM Signals
     signal bram_wea : std_logic;
     signal bram_addra : std_logic_vector(ADDR_WIDTH - 1 downto 0);
@@ -107,7 +85,7 @@ begin
     -- Instantiate BRAM
     -- Port A: Writes (Host or Update)
     -- Port B: Reads (Calc or Update)
-    u_bram : bram
+    u_bram : entity work.bram
         generic map (
             DATA_WIDTH => DATA_WIDTH,
             ADDR_WIDTH => ADDR_WIDTH

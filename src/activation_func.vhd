@@ -8,14 +8,13 @@ use work.sigmoid_lut_pkg.all;
 
 entity activation_func is
     generic(
-        input_width : integer := 48;
-        input_frac_width : integer := 16;
-        output_width : integer := 32;
+        input_width : integer := 48;  -- Width of accumulator output (varies by number of inputs)
+        input_frac_width : integer := FRAC_BITS;  -- Fractional bits (same as DATA_WIDTH format)
         max_value : real := 1.0  -- Maximum threshold for clamped ReLU
     );
     port(
         input_i : in std_logic_vector(input_width - 1 downto 0);
-        output_o : out sfixed(INT_BITS - 1 downto -FRAC_BITS) := (others => '0')
+        output_o : out sfixed(INT_BITS - 1 downto -FRAC_BITS) := (others => '0')  -- Output is always DATA_WIDTH
     );
 end entity activation_func;
 
@@ -32,7 +31,6 @@ architecture sigmoid of activation_func is
     signal input_sfixed : sfixed(input_width - input_frac_width - 1 downto - input_frac_width);
     signal input_slice : sfixed(SLICE_HIGH downto - input_frac_width);
     signal lut_index : integer range 0 to LUT_SIZE - 1;
-    signal sigmoid_value : real;
     signal input_real : real;
     signal clipped : real;
     signal normalized : real;
@@ -118,18 +116,15 @@ begin
                  else integer(normalized * real(LUT_SIZE - 1));
 
 
-    -- Lookup sigmoid value from LUT
-    sigmoid_value <= SIGMOID_LUT(lut_index);
-
-    -- Convert to output fixed-point format
-    output_o <= to_sfixed(sigmoid_value, output_o'high, output_o'low);
+    -- Lookup sigmoid value from LUT (now returns sfixed directly)
+    output_o <= SIGMOID_LUT(lut_index);
     
     process(input_real)
     begin
         report "Sigmoid Debug: in=" & real'image(input_real) & 
                " norm=" & real'image(normalized) & 
                " idx=" & integer'image(lut_index) & 
-               " val=" & real'image(sigmoid_value);
+               " val=" & real'image(to_real(SIGMOID_LUT(lut_index)));
     end process;
 
 

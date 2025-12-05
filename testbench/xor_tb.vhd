@@ -10,8 +10,12 @@ end entity xor_tb;
 architecture testbench of xor_tb is
     -- Configuration
     constant CLK_PERIOD : time := 100 ns;
-    constant DATA_WIDTH : integer := 32;
     constant TOLERANCE_C : real := 0.1;
+
+    -- Network topology: 2 inputs -> 3 hidden -> 1 output
+    constant NUM_INPUTS : integer := 2;
+    constant NUM_LAYERS : integer := 2;
+    constant LAYER_SIZES : layer_config_array(0 to 1) := (3, 1);
 
     -- Signals
     signal clk : std_logic := '0';
@@ -60,8 +64,9 @@ begin
     -- DUT Instantiation
     dut: entity work.neural_network
         generic map (
-            NUM_INPUTS => 2,
-            NUM_OUTPUTS => 1,
+            NUM_INPUTS  => NUM_INPUTS,
+            NUM_LAYERS  => NUM_LAYERS,
+            LAYER_SIZES => LAYER_SIZES,
             MEMORY_SIZE => 1024
         )
         port map (
@@ -118,7 +123,7 @@ begin
 
             -- Wait for Output
             wait until output_valid = '1';
-            wait until rising_edge(clk); -- Wait one more cycle for data to settle
+            wait until rising_edge(clk);
 
             report "Input: " & real'image(in1) & ", " & real'image(in2) &
                    " | Output: " & real'image(to_real_val(output_data)) &
@@ -127,8 +132,6 @@ begin
             assert abs(to_real_val(output_data) - expected) < TOLERANCE_C
                 report "Test Failed!" severity error;
 
-            -- TODO: Wait for 'done' signal once calc_done is implemented in calculation_unit
-            -- Currently calc_done is hardcoded to '0' in neural_network.vhd
             wait until rising_edge(clk);
             wait until rising_edge(clk);
         end procedure;
@@ -136,11 +139,10 @@ begin
     begin
         rst <= '1';
         wait for CLK_PERIOD * 2;
-        -- rst <= '0'; -- Don't release reset yet!
-        -- wait for CLK_PERIOD * 2;
 
         report "Loading Weights...";
-        -- Layer 0 (3 neurons, 2 inputs + bias each)
+        -- Layer 0 (3 neurons, 2 inputs + bias each) = 9 weights
+        -- Weight layout: [n0_w0, n0_w1, n0_bias, n1_w0, n1_w1, n1_bias, n2_w0, n2_w1, n2_bias]
         -- N0 (OR-like): w=[10, 10], b=-5
         load_weight(0, 10.0); load_weight(1, 10.0); load_weight(2, -5.0);
         -- N1 (NAND-like): w=[-10, -10], b=15
@@ -148,14 +150,13 @@ begin
         -- N2 (Unused/Zero): w=[0, 0], b=0
         load_weight(6, 0.0); load_weight(7, 0.0); load_weight(8, 0.0);
 
-        -- Layer 1 (1 neuron, 3 inputs + bias)
+        -- Layer 1 (1 neuron, 3 inputs + bias) = 4 weights
         -- N0 (AND-like): w=[10, 10, 0], b=-15
         load_weight(9, 10.0); load_weight(10, 10.0); load_weight(11, 0.0); load_weight(12, -15.0);
 
         report "Weights Loaded. Releasing Reset...";
         wait for CLK_PERIOD * 2;
         rst <= '0';
-        -- wait for CLK_PERIOD * 20; -- Wait for fetch to complete (13 cycles + overhead)
         wait until ready = '1';
         report "DUT Ready. Starting Inference...";
 

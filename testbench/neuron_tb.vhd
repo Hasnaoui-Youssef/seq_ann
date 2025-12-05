@@ -17,14 +17,14 @@ architecture testbench of neuron_tb is
 
     signal clk : std_logic := '0';
     signal rst : std_logic := '1';
-    
+
     -- Forward pass signals
     signal fwd_en : std_logic := '0';
     signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH - 1 downto 0);
     signal weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH - 1 downto 0);
     signal bias_s : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
     signal output_s : std_logic_vector(DATA_WIDTH - 1 downto 0);
-    
+
     -- Backward pass signals (not used in forward-only test)
     signal bwd_en : std_logic := '0';
     signal error_s : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
@@ -134,7 +134,7 @@ begin
         end if;
         report "Tolerance: " & real'image(TOLERANCE_C);
         report "========================================";
-        
+
         -- Reset
         rst <= '1';
         fwd_en <= '0';
@@ -146,7 +146,7 @@ begin
         for test_idx in TEST_CASES'range loop
             report "----------------------------------------";
             report "Test " & integer'image(test_idx) & ": " & TEST_CASES(test_idx).description;
-            
+
             -- Set weights (directly, no weight loading interface)
             for i in 0 to NUM_INPUTS_C - 1 loop
                 weight_fixed := to_sfixed(arg => TEST_CASES(test_idx).weights(i),
@@ -159,7 +159,7 @@ begin
                                      left_index => weight_fixed'high,
                                      right_index => weight_fixed'low);
             bias_s <= to_slv(weight_fixed);
-            
+
             -- Set inputs
             for i in 0 to NUM_INPUTS_C - 1 loop
                 input_fixed := to_sfixed(arg => TEST_CASES(test_idx).inputs(i),

@@ -6,8 +6,9 @@ use work.pkg_layer.all;
 
 entity neural_network is
     generic(
-        NUM_INPUTS  : integer := 4;
-        NUM_OUTPUTS : integer := 1;
+        NUM_INPUTS  : integer := 2;
+        NUM_LAYERS  : integer := 2;
+        LAYER_SIZES : layer_config_array;  -- e.g., (3, 1) for hidden=3, output=1
         MEMORY_SIZE : integer := 1024
     );
     port (
@@ -29,7 +30,7 @@ entity neural_network is
         input_data   : in std_logic_vector(DATA_WIDTH - 1 downto 0);
         input_valid  : in std_logic;
         input_last   : in std_logic;
-        
+
         output_data  : out std_logic_vector(DATA_WIDTH - 1 downto 0);
         output_valid : out std_logic;
         output_last  : out std_logic
@@ -40,10 +41,10 @@ architecture rtl of neural_network is
 
     -- Internal Signals
     signal calc_mode   : std_logic;
-    signal calc_start  : std_logic; -- Not used by calc unit yet, but part of control
-    signal calc_store  : std_logic; -- Trigger for gradient storage
-    signal calc_done   : std_logic := '0'; -- Placeholder
-    signal calc_ready  : std_logic; -- From Calc Unit
+    signal calc_start  : std_logic;
+    signal calc_store  : std_logic;
+    signal calc_done   : std_logic := '0';
+    signal calc_ready  : std_logic;
     signal learning_rate : std_logic_vector(DATA_WIDTH - 1 downto 0);
 
     -- Memory <-> Calc Interface
@@ -51,14 +52,10 @@ architecture rtl of neural_network is
     signal mem_read_addr  : integer := 0;
     signal mem_read_data  : std_logic_vector(DATA_WIDTH - 1 downto 0);
     signal mem_read_valid : std_logic;
-    
+
     signal mem_update_en   : std_logic;
     signal mem_update_addr : integer := 0;
     signal mem_update_grad : std_logic_vector(DATA_WIDTH - 1 downto 0);
-
-    -- Internal Signals
-    signal calc_out_valid : std_logic;
-    signal calc_out_last : std_logic;
 
 begin
 
@@ -99,6 +96,11 @@ begin
 
     -- Calculation Unit
     u_calc : entity work.calculation_unit
+        generic map (
+            NUM_INPUTS  => NUM_INPUTS,
+            NUM_LAYERS  => NUM_LAYERS,
+            LAYER_SIZES => LAYER_SIZES
+        )
         port map (
             clk => clk,
             rst => rst,
@@ -110,7 +112,7 @@ begin
             output_data => output_data,
             output_valid => output_valid,
             output_last => output_last,
-            error_in => (others => '0'), -- Placeholder for backprop
+            error_in => (others => '0'),
             error_in_valid => '0',
             mem_read_req => mem_read_req,
             mem_read_addr => mem_read_addr,

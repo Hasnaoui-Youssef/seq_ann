@@ -10,19 +10,6 @@ entity activation_func_tb is
 end entity activation_func_tb;
 
 architecture testbench of activation_func_tb is
-    -- Component declaration
-    component activation_func is
-        generic(
-            input_width : integer := 32;
-            input_frac_width : integer := 16;
-            output_width : integer := 32
-        );
-        port(
-            input_i : in std_logic_vector(input_width - 1 downto 0);
-            output_o : out sfixed(INT_BITS - 1 downto -FRAC_BITS)
-        );
-    end component;
-
     -- Test signals
     signal input_s : std_logic_vector(DATA_WIDTH - 1 downto 0);
     signal output_s : sfixed(INT_BITS - 1 downto -FRAC_BITS);
@@ -71,8 +58,7 @@ begin
     dut: entity work.activation_func(sigmoid)
         generic map(
             input_width => DATA_WIDTH,
-            input_frac_width => FRAC_BITS,
-            output_width => DATA_WIDTH
+            input_frac_width => FRAC_BITS
         )
         port map(
             input_i => input_s,
