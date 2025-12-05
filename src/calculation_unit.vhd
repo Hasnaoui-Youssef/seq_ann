@@ -57,7 +57,7 @@ architecture rtl of calculation_unit is
     signal l1_out_data : std_logic_bus_array(0 to 0)(DATA_WIDTH - 1 downto 0); -- 1 output
 
     -- Weight Fetching State Machine
-    type state_t is (IDLE, FETCH_WEIGHTS, WEIGHTS_READY, STORE_GRADIENTS);
+    type state_t is (IDLE, FETCH_REQUEST, FETCH_WAIT, WEIGHTS_READY, STORE_GRADIENTS);
     signal state : state_t := IDLE;
     signal fetch_addr : integer := 0;
     signal fetch_layer : integer := 0; -- 0 for L0, 1 for L1
@@ -111,6 +111,7 @@ begin
         if rst = '1' then
             state <= IDLE;
             mem_read_req <= '0';
+            mem_update_en <= '0';
             fetch_addr <= 0;
             l0_weights <= (others => (others => '0'));
             l1_weights <= (others => (others => '0'));
@@ -127,20 +128,26 @@ begin
                 when IDLE =>
                     ready <= '0';
                     -- Auto-load weights on reset/start (simplified)
-                    state <= FETCH_WEIGHTS;
+                    state <= FETCH_REQUEST;
                     fetch_addr <= 0;
                     fetch_layer <= 0;
                     fetch_idx <= 0;
-                    mem_read_req <= '1';
-                    mem_read_addr <= 0;
+                    mem_read_req <= '0';
                     
-                when FETCH_WEIGHTS =>
+                when FETCH_REQUEST =>
+                    -- Send read request
+                    mem_read_addr <= fetch_addr;
+                    mem_read_req <= '1';
+                    state <= FETCH_WAIT;
+                    
+                when FETCH_WAIT =>
                     ready <= '0';
-                    mem_read_req <= '0'; -- Pulse request
+                    mem_read_req <= '0'; -- Clear request (edge-triggered)
+                    
                     if mem_read_valid = '1' then
                         report "Fetch Debug: L=" & integer'image(fetch_layer) & 
                                " idx=" & integer'image(fetch_idx) & 
-                               " addr=" & integer'image(fetch_addr) & -- This is NEXT addr, not current data addr
+                               " addr=" & integer'image(fetch_addr) &
                                " data=" & to_hstring(mem_read_data);
                                
                         -- Store received weight
@@ -149,24 +156,22 @@ begin
                             if fetch_idx = L0_WEIGHT_COUNT - 1 then
                                 fetch_layer <= 1;
                                 fetch_idx <= 0;
+                                fetch_addr <= fetch_addr + 1;
+                                state <= FETCH_REQUEST;
                             else
                                 fetch_idx <= fetch_idx + 1;
+                                fetch_addr <= fetch_addr + 1;
+                                state <= FETCH_REQUEST;
                             end if;
                         elsif fetch_layer = 1 then
                             l1_weights(fetch_idx) <= mem_read_data;
                             if fetch_idx = L1_WEIGHT_COUNT - 1 then
                                 state <= WEIGHTS_READY;
-                                mem_read_req <= '0';
                             else
                                 fetch_idx <= fetch_idx + 1;
+                                fetch_addr <= fetch_addr + 1;
+                                state <= FETCH_REQUEST;
                             end if;
-                        end if;
-                        
-                        -- Request next address (if not done)
-                        if state = FETCH_WEIGHTS and not (fetch_layer = 1 and fetch_idx = L1_WEIGHT_COUNT - 1) then
-                            fetch_addr <= fetch_addr + 1;
-                            mem_read_addr <= fetch_addr + 1;
-                            mem_read_req <= '1';
                         end if;
                     end if;
                     
