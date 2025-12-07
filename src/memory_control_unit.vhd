@@ -65,13 +65,13 @@ architecture rtl of memory_control_unit is
         w_sfixed := to_sfixed(w_old, w_sfixed);
         lr_sfixed := to_sfixed(lr, lr_sfixed);
         grad_sfixed := to_sfixed(grad, grad_sfixed);
-        
+
         -- delta = lr * grad
         delta := resize(lr_sfixed * grad_sfixed, delta);
-        
+
         -- result = w_old - delta
         result := resize(w_sfixed - delta, result);
-        
+
         return to_std_logic_vector(result);
     end function;
 
@@ -127,7 +127,7 @@ begin
     process(host_write_en, host_addr, host_data_in, update_en_d1, update_addr_d1, update_data_d1, lr_d1, update_grad_d1)
     begin
         if host_write_en = '1' then
-            report "MemCtrl Write: addr=" & integer'image(host_addr) & " data=" & to_hstring(host_data_in);
+            --report "MemCtrl Write: addr=" & integer'image(host_addr) & " data=" & to_hstring(host_data_in);
             bram_wea <= '1';
             if host_addr >= 0 and host_addr < 2**ADDR_WIDTH then
                 bram_addra <= std_logic_vector(to_unsigned(host_addr, ADDR_WIDTH));
@@ -156,16 +156,16 @@ begin
     begin
         if rising_edge(clk) then
             -- Debug
-            if read_req = '1' or read_req_d1 = '1' or read_req_d2 = '1' or read_valid = '1' then
-                report "MemCtrl Debug: read_req=" & std_logic'image(read_req) &
-                       " read_req_prev=" & std_logic'image(read_req_prev) &
-                       " read_req_d1=" & std_logic'image(read_req_d1) &
-                       " read_req_d2=" & std_logic'image(read_req_d2) &
-                       " read_valid=" & std_logic'image(read_valid) &
-                       " bram_dob=" & to_hstring(bram_dob) &
-                       " addrb=" & to_hstring(bram_addrb);
-            end if;
-            
+            --if read_req = '1' or read_req_d1 = '1' or read_req_d2 = '1' or read_valid = '1' then
+            --    report "MemCtrl Debug: read_req=" & std_logic'image(read_req) &
+            --           " read_req_prev=" & std_logic'image(read_req_prev) &
+            --           " read_req_d1=" & std_logic'image(read_req_d1) &
+            --           " read_req_d2=" & std_logic'image(read_req_d2) &
+            --           " read_valid=" & std_logic'image(read_valid) &
+            --           " bram_dob=" & to_hstring(bram_dob) &
+            --           " addrb=" & to_hstring(bram_addrb);
+            --end if;
+
             if rst = '1' then
                 update_en_d1 <= '0';
                 read_valid <= '0';
@@ -178,21 +178,21 @@ begin
                 update_addr_d1 <= update_addr;
                 update_grad_d1 <= update_grad;
                 lr_d1 <= learning_rate;
-                
+
                 -- Capture Read Data (for Update)
                 update_data_d1 <= bram_dob;
 
                 -- Read Request Edge Detection
                 -- Detect rising edge of read_req for proper request handshaking
                 read_req_prev <= read_req;
-                
+
                 -- Stage 1: Set when rising edge detected
                 if read_req = '1' and read_req_prev = '0' and update_en = '0' then
                     read_req_d1 <= '1';
                 else
                     read_req_d1 <= '0';
                 end if;
-                
+
                 -- Stage 2: Pipeline delay for BRAM
                 read_req_d2 <= read_req_d1;
 

@@ -2,15 +2,14 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.fixed_pkg.all;
+use ieee.fixed_float_types.all;
 
 use work.types.all;
 use work.sigmoid_lut_pkg.all;
 
 entity activation_func is
     generic(
-        input_width : integer := 48;  -- Width of accumulator output (varies by number of inputs)
-        input_frac_width : integer := FRAC_BITS;  -- Fractional bits (same as DATA_WIDTH format)
-        max_value : real := 1.0  -- Maximum threshold for clamped ReLU
+        input_width : integer := 48  -- Width of accumulator output (varies by number of inputs)
     );
     port(
         input_i : in std_logic_vector(input_width - 1 downto 0);
@@ -24,130 +23,77 @@ end entity activation_func;
 -- end architecture relu;
 
 architecture sigmoid of activation_func is
-    -- Constants for slicing
-    constant SLICE_HIGH : integer := 5; -- Sufficient for range -32 to 32 (covers -8 to 8 and prevents wrap-around for 16.0)
-    
-    -- Signals
-    signal input_sfixed : sfixed(input_width - input_frac_width - 1 downto - input_frac_width);
-    signal input_slice : sfixed(SLICE_HIGH downto - input_frac_width);
-    signal lut_index : integer range 0 to LUT_SIZE - 1;
-    signal input_real : real;
-    signal clipped : real;
-    signal normalized : real;
-    
-    -- Overflow detection
-    signal overflow_pos : boolean;
-    signal overflow_neg : boolean;
+    -- Input integer bits (derived from input width and frac width)
+    constant INPUT_INT_BITS : integer := input_width - FRAC_BITS;
+
+    -- Input as sfixed
+    signal input_sfixed : sfixed(INPUT_INT_BITS - 1 downto -FRAC_BITS);
+
+    -- Index calculation signals
+    -- After MSB flip, extract bits for LUT index
+    signal index_slice : sfixed(INDEX_HIGH downto INDEX_LOW);
+    signal msb_flipped : std_logic;
+    signal lut_index : unsigned(LUT_BITS - 1 downto 0);
 
 begin
     -- Convert input to sfixed
     input_sfixed <= to_sfixed(input_i, input_sfixed);
 
-    -- Slicing and Overflow Logic
-    process(all) -- Use VHDL-2008 all
-        variable v_upper_bits_or : std_logic;
-    begin
-        -- Default assignments
-        overflow_pos <= false;
-        overflow_neg <= false;
-        input_slice <= (others => '0');
-        
-        -- Check if input is wider than slice
-        if input_sfixed'high > SLICE_HIGH then
-            -- Check upper bits for overflow
-            v_upper_bits_or := '0';
-            for k in input_sfixed'high downto SLICE_HIGH + 1 loop
-                if input_sfixed(k) = '1' then
-                    v_upper_bits_or := '1';
-                end if;
-            end loop;
-            
-            if input_sfixed(input_sfixed'high) = '0' then -- Positive
-                -- If any upper bit is 1, it's an overflow
-                if v_upper_bits_or = '1' then
-                    overflow_pos <= true;
-                end if;
-            else -- Negative
-                -- If any upper bit is 0 (not all ones), it's an overflow (large negative)
-                -- Wait, for negative numbers:
-                -- -1 is 111...111. Upper bits are 1.
-                -- Large negative (e.g. -100) is 11...10...
-                -- So we check if upper bits are NOT all ones.
-                -- i.e. if any upper bit is 0.
-                v_upper_bits_or := '0'; -- Reuse variable to track if any '0' found
-                for k in input_sfixed'high downto SLICE_HIGH + 1 loop
-                    if input_sfixed(k) = '0' then
-                        v_upper_bits_or := '1'; -- Found a zero
-                    end if;
-                end loop;
-                
-                if v_upper_bits_or = '1' then
-                    overflow_neg <= true;
-                end if;
-            end if;
-            
-            input_slice <= input_sfixed(SLICE_HIGH downto -input_frac_width);
-        else
-            -- Input is smaller than slice
-            input_slice <= resize(input_sfixed, input_slice);
-        end if;
-    end process;
+    ---------------------------------------------------------------------------
+    -- Index Calculation via Resize + MSB Flip
+    ---------------------------------------------------------------------------
+    -- The indexing scheme:
+    -- 1. Resize input to index slice range with saturation (clips to [-2^n, 2^n))
+    -- 2. Flip MSB to transform signed range to unsigned [0, 2^(n+1))
+    -- 3. Use result directly as LUT index
+    --
+    -- Saturation handles overflow automatically - values outside range clamp
+    -- to bounds, which map to LUT[0]=0 and LUT[max]=1 (forced in LUT generation)
+    --
+    -- Why truncate (floor) instead of round for fractional bits?
+    -- 1. Hardware efficiency: truncation is just wire routing, no adder needed
+    -- 2. Consistency: always maps to the lower LUT entry of the interval
+    -- 3. Bounded error: max error is one step size (2^(n+1-k))
+    -- 4. For sigmoid's smooth curve, the difference is negligible
+    ---------------------------------------------------------------------------
+    index_slice <= resize(
+        arg            => input_sfixed,
+        left_index     => INDEX_HIGH,
+        right_index    => INDEX_LOW,
+        overflow_style => fixed_saturate,
+        round_style    => fixed_truncate
+    );
 
-    -- Calculate Real Value with Overflow Handling
-    process(all)
-    begin
-        if overflow_pos then
-            input_real <= INPUT_MAX + 1.0; -- Force clip to max
-        elsif overflow_neg then
-            input_real <= INPUT_MIN - 1.0; -- Force clip to min
-        else
-            input_real <= to_real(input_slice);
-        end if;
-        
-        report "Sigmoid Debug: slice=" & to_hstring(input_slice) & 
-               " real=" & real'image(to_real(input_slice));
-    end process;
+    -- Flip MSB to transform signed range to unsigned
+    -- Example with n=3 (range [-8, 8), 4 integer bits):
+    --   -8 = 1000b -> flip MSB -> 0000b = 0  (maps to LUT[0] = 0)
+    --   -1 = 1111b -> flip MSB -> 0111b = 7  (maps to middle-ish)
+    --    0 = 0000b -> flip MSB -> 1000b = 8  (maps to middle, sigmoid(0)=0.5)
+    --   +7 = 0111b -> flip MSB -> 1111b = 15 (maps to LUT[max] = 1)
+    msb_flipped <= not index_slice(INDEX_HIGH);
 
-    clipped <= INPUT_MAX when input_real > INPUT_MAX else INPUT_MIN when input_real < INPUT_MIN else input_real;
-    normalized <= ((clipped - INPUT_MIN)/(INPUT_MAX - INPUT_MIN));
+    -- Construct unsigned index: flipped MSB concatenated with remaining bits
+    lut_index <= unsigned(msb_flipped & to_slv(index_slice(INDEX_HIGH - 1 downto INDEX_LOW)));
 
-    lut_index <= 0 when (normalized  < 0.0)
-                 else (LUT_SIZE - 1) when (normalized > 1.0)
-                 else integer(normalized * real(LUT_SIZE - 1));
-
-
-    -- Lookup sigmoid value from LUT (now returns sfixed directly)
-    output_o <= SIGMOID_LUT(lut_index);
-    
-    process(input_real)
-    begin
-        report "Sigmoid Debug: in=" & real'image(input_real) & 
-               " norm=" & real'image(normalized) & 
-               " idx=" & integer'image(lut_index) & 
-               " val=" & real'image(to_real(SIGMOID_LUT(lut_index)));
-    end process;
-
-
-    
-    -- Startup check
-    assert false report "Sigmoid Architecture Instantiated" severity note;
+    -- Direct LUT lookup
+    output_o <= SIGMOID_LUT(to_integer(lut_index));
 
 end architecture sigmoid;
 
 -- architecture clamped_relu of activation_func is
---     constant MAX_THRESHOLD : sfixed((output_width + 1) / 2 - 1 downto -(output_width / 2)) := 
+--     constant MAX_THRESHOLD : sfixed((output_width + 1) / 2 - 1 downto -(output_width / 2)) :=
 --         to_sfixed(max_value, (output_width + 1) / 2 - 1, -(output_width / 2));
---     constant ZERO : sfixed((output_width + 1) / 2 - 1 downto -(output_width / 2)) := 
+--     constant ZERO : sfixed((output_width + 1) / 2 - 1 downto -(output_width / 2)) :=
 --         to_sfixed(0.0, (output_width + 1) / 2 - 1, -(output_width / 2));
---     
---     signal input_sfixed : sfixed(input_width - input_frac_width - 1 downto -input_frac_width);
+--
+--     signal input_sfixed : sfixed(input_width - FRAC_BITS - 1 downto -FRAC_BITS);
 -- begin
 --     -- Startup check
 --     assert false report "Clamped ReLU Architecture Instantiated" severity note;
--- 
+--
 --     -- Convert input to sfixed
 --     input_sfixed <= to_sfixed(input_i, input_sfixed);
---     
+--
 --     -- Clamped ReLU: output = clamp(input, 0, max_value)
 --     process(input_sfixed)
 --     begin
@@ -162,5 +108,5 @@ end architecture sigmoid;
 --             output_o <= resize(input_sfixed, output_o);
 --         end if;
 --     end process;
--- 
+--
 -- end architecture clamped_relu;

@@ -57,8 +57,7 @@ begin
     -- DUT instantiation (sigmoid architecture)
     dut: entity work.activation_func(sigmoid)
         generic map(
-            input_width => DATA_WIDTH,
-            input_frac_width => FRAC_BITS
+            input_width => DATA_WIDTH
         )
         port map(
             input_i => input_s,

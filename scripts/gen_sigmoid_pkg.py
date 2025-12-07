@@ -11,6 +11,13 @@ def generate_sigmoid_lut(config : SigmoidConfig):
         x = x_min + (x_max - x_min) * i / (config.lut_size - 1)
         sig_val = sigmoid(x)
         lut.append((i, x, sig_val))
+    
+    # Force edge values to exact 0 and 1 for proper saturation behavior
+    # When resize saturates, it maps to these edge entries
+    idx_first, x_first, _ = lut[0]
+    idx_last, x_last, _ = lut[-1]
+    lut[0] = (idx_first, x_first, 0.0)
+    lut[-1] = (idx_last, x_last, 1.0)
 
     return lut
 
@@ -43,16 +50,21 @@ use ieee.fixed_pkg.all;
 use work.types.all;
 
 package sigmoid_lut_pkg is
+    -- LUT Configuration
     constant LUT_SIZE : integer := {config.lut_size};
-    constant LUT_BITS : integer := {config.lut_bits};
-    constant INDEX_HIGH : integer := {high_bit};
-    constant INDEX_LOW : integer := {low_bit};
-    constant INDEX_WIDTH : integer := INDEX_HIGH - INDEX_LOW + 1;
-    constant INPUT_MAX : real := {config.input_range[1]};
-    constant INPUT_MIN : real := {config.input_range[0]};
-    constant SCALE_FACTOR : real := (real(LUT_SIZE) - 1.0) / (INPUT_MAX - INPUT_MIN);
+    constant LUT_BITS : integer := {config.lut_bits};  -- k = log2(LUT_SIZE)
+    
+    -- Range Configuration: [-2^RANGE_EXP, 2^RANGE_EXP)
+    constant RANGE_EXP : integer := {config.range_exp};  -- n, range is [-2^n, 2^n)
+    
+    -- Index extraction bounds (after MSB flip transformation)
+    -- To get LUT index: resize with saturation, flip MSB, extract bits as unsigned
+    constant INDEX_HIGH : integer := {high_bit};  -- = RANGE_EXP = n
+    constant INDEX_LOW : integer := {low_bit};   -- = RANGE_EXP + 1 - LUT_BITS = n + 1 - k
+    constant INDEX_WIDTH : integer := INDEX_HIGH - INDEX_LOW + 1;  -- = LUT_BITS = k
 
     -- LUT stores fixed-point values directly (sfixed format)
+    -- Note: LUT[0] = 0.0 and LUT[LUT_SIZE-1] = 1.0 are forced for proper saturation
     type sigmoid_lut_type is array(0 to LUT_SIZE - 1) of sfixed(INT_BITS - 1 downto -FRAC_BITS);
 
     constant SIGMOID_LUT : sigmoid_lut_type := (
@@ -108,27 +120,31 @@ def main():
                         help='Data width in bits (default: 32)')
     parser.add_argument('--frac-bits', type=int, default=16,
                         help='Fractional bits (default: 16)')
-    parser.add_argument('--input-min', type=float, default=-8.0,
-                        help='Minimum input value (default: -8.0)')
-    parser.add_argument('--input-max', type=float, default=8.0,
-                        help='Maximum input value (default: 8.0)')
+    parser.add_argument('--range-exp', type=int, default=3,
+                        help='Range exponent n for symmetric range [-2^n, 2^n) (default: 3, i.e. [-8, 8))')
 
     args = parser.parse_args()
 
     # Create configuration
-    config = SigmoidConfig(
-        lut_size=args.lut_size,
-        data_width=args.data_width,
-        frac_bits=args.frac_bits,
-        input_range=(args.input_min, args.input_max)
-    )
+    try:
+        config = SigmoidConfig(
+            lut_size=args.lut_size,
+            data_width=args.data_width,
+            frac_bits=args.frac_bits,
+            range_exp=args.range_exp
+        )
+    except ValueError as e:
+        print(f"Configuration error: {e}")
+        return
 
     print("=" * 60)
     print("Sigmoid Package Generation")
     print("=" * 60)
-    print(f"LUT Size: {config.lut_size} entries ({config.lut_bits} bits)")
-    print(f"Input Width: {config.data_width} bits")
-    print(f"Output Width: {config.data_width} bits")
+    print(f"LUT Size: {config.lut_size} entries (k = {config.lut_bits} bits)")
+    print(f"Range: [-2^{config.range_exp}, 2^{config.range_exp}) = [{config.input_range[0]}, {config.input_range[1]})")
+    print(f"Data Width: {config.data_width} bits ({config.int_bits} int, {config.frac_bits} frac)")
+    print(f"Index extraction: bits ({config.index_high} downto {config.index_low})")
+    print(f"Overflow check bits: {config.overflow_check_bits}")
     print("=" * 60)
 
     # Generate LUT

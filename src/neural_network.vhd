@@ -21,19 +21,14 @@ entity neural_network is
         ready       : out std_logic;
         done        : out std_logic;
 
-        -- Host Interface (Weight Loading)
+        -- Host Interface (Memory Loading: inputs at 0..NUM_INPUTS-1, weights after)
         host_write_en : in std_logic;
         host_addr     : in integer;
         host_data     : in std_logic_vector(DATA_WIDTH - 1 downto 0);
 
-        -- Data Interface (Streaming)
-        input_data   : in std_logic_vector(DATA_WIDTH - 1 downto 0);
-        input_valid  : in std_logic;
-        input_last   : in std_logic;
-
+        -- Output Interface
         output_data  : out std_logic_vector(DATA_WIDTH - 1 downto 0);
-        output_valid : out std_logic;
-        output_last  : out std_logic
+        output_valid : out std_logic
     );
 end entity neural_network;
 
@@ -43,7 +38,7 @@ architecture rtl of neural_network is
     signal calc_mode   : std_logic;
     signal calc_start  : std_logic;
     signal calc_store  : std_logic;
-    signal calc_done   : std_logic := '0';
+    signal calc_done   : std_logic;
     signal calc_ready  : std_logic;
     signal learning_rate : std_logic_vector(DATA_WIDTH - 1 downto 0);
 
@@ -104,14 +99,13 @@ begin
         port map (
             clk => clk,
             rst => rst,
+            start => calc_start,
             mode => calc_mode,
             start_store => calc_store,
-            input_data => input_data,
-            input_valid => input_valid,
-            input_last => input_last,
+            ready => calc_ready,
+            done => calc_done,
             output_data => output_data,
             output_valid => output_valid,
-            output_last => output_last,
             error_in => (others => '0'),
             error_in_valid => '0',
             mem_read_req => mem_read_req,
@@ -120,8 +114,7 @@ begin
             mem_read_valid => mem_read_valid,
             mem_update_en => mem_update_en,
             mem_update_addr => mem_update_addr,
-            mem_update_grad => mem_update_grad,
-            ready => calc_ready
+            mem_update_grad => mem_update_grad
         );
 
 end architecture rtl;

@@ -76,8 +76,7 @@ begin
     -- DUT instantiation (sigmoid architecture)
     dut: entity work.activation_func(sigmoid)
         generic map(
-            input_width => DATA_WIDTH,
-            input_frac_width => FRAC_BITS
+            input_width => DATA_WIDTH
         )
         port map(
             input_i => input_s,
@@ -610,10 +609,8 @@ def main():
                         help='Fractional bits (default: 16)')
     parser.add_argument('--num-tests', type=int, default=16,
                         help='Number of test vectors (default: 16)')
-    parser.add_argument('--input-min', type=float, default=-8.0,
-                        help='Minimum input value (default: -8.0)')
-    parser.add_argument('--input-max', type=float, default=8.0,
-                        help='Maximum input value (default: 8.0)')
+    parser.add_argument('--range-exp', type=int, default=3,
+                        help='Range exponent n for symmetric range [-2^n, 2^n) (default: 3)')
 
     args = parser.parse_args()
 
@@ -623,7 +620,7 @@ def main():
         data_width=args.data_width,
         frac_bits=args.frac_bits,
         num_test_inputs=args.num_tests,
-        input_range=(args.input_min, args.input_max)
+        range_exp=args.range_exp
     )
 
     print("=" * 60)

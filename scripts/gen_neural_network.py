@@ -123,13 +123,6 @@ def generate_weight_loading_vhdl(layer_params, data_width=32, frac_bits=16):
                 weight_val = weights[weight_idx, neuron_idx]
                 fixed_val = float_to_fixed(weight_val, frac_bits)
 
-                # Convert to std_logic_vector representation
-                if fixed_val < 0:
-                    # Two's complement for negative numbers
-                    slv_val = (1 << data_width) + fixed_val
-                else:
-                    slv_val = fixed_val
-
                 vhdl_code.append(f"    layer_{layer_idx}_select <= {neuron_idx};")
                 vhdl_code.append(f"    weight_index <= {weight_idx};")
                 vhdl_code.append(f'    weight_data <= std_logic_vector(to_signed({fixed_val}, DATA_WIDTH));')

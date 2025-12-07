@@ -6,20 +6,25 @@ use ieee.fixed_pkg.all;
 use work.types.all;
 
 package sigmoid_lut_pkg is
+    -- LUT Configuration
     constant LUT_SIZE : integer := 256;
-    constant LUT_BITS : integer := 8;
-    constant INDEX_HIGH : integer := 3;
-    constant INDEX_LOW : integer := -4;
-    constant INDEX_WIDTH : integer := INDEX_HIGH - INDEX_LOW + 1;
-    constant INPUT_MAX : real := 8.0;
-    constant INPUT_MIN : real := -8.0;
-    constant SCALE_FACTOR : real := (real(LUT_SIZE) - 1.0) / (INPUT_MAX - INPUT_MIN);
+    constant LUT_BITS : integer := 8;  -- k = log2(LUT_SIZE)
+    
+    -- Range Configuration: [-2^RANGE_EXP, 2^RANGE_EXP)
+    constant RANGE_EXP : integer := 3;  -- n, range is [-2^n, 2^n)
+    
+    -- Index extraction bounds (after MSB flip transformation)
+    -- To get LUT index: resize with saturation, flip MSB, extract bits as unsigned
+    constant INDEX_HIGH : integer := 3;  -- = RANGE_EXP = n
+    constant INDEX_LOW : integer := -4;   -- = RANGE_EXP + 1 - LUT_BITS = n + 1 - k
+    constant INDEX_WIDTH : integer := INDEX_HIGH - INDEX_LOW + 1;  -- = LUT_BITS = k
 
     -- LUT stores fixed-point values directly (sfixed format)
+    -- Note: LUT[0] = 0.0 and LUT[LUT_SIZE-1] = 1.0 are forced for proper saturation
     type sigmoid_lut_type is array(0 to LUT_SIZE - 1) of sfixed(INT_BITS - 1 downto -FRAC_BITS);
 
     constant SIGMOID_LUT : sigmoid_lut_type := (
-        0 => "00000000000000000000000000010110",
+        0 => "00000000000000000000000000000000",
         1 => "00000000000000000000000000010111",
         2 => "00000000000000000000000000011001",
         3 => "00000000000000000000000000011011",
@@ -274,7 +279,7 @@ package sigmoid_lut_pkg is
         252 => "00000000000000001111111111100101",
         253 => "00000000000000001111111111100111",
         254 => "00000000000000001111111111101001",
-        255 => "00000000000000001111111111101010"
+        255 => "00000000000000010000000000000000"
     );
 
 end package sigmoid_lut_pkg;

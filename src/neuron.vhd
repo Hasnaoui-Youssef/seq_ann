@@ -46,14 +46,14 @@ architecture rtl of neuron is
 
     -- Multiplication products (input * weight for each input)
     signal products : std_logic_bus_array(0 to NUM_INPUTS - 1)(2 * DATA_WIDTH - 1 downto 0);
-    
+
     -- Accumulator inputs: products resized + bias
     signal acc_inputs : std_logic_bus_array(ACC_SIZE - 1 downto 0)(DATA_WIDTH - 1 downto 0);
-    
+
     -- Accumulator output
     signal acc_sum : std_logic_vector(ACC_OUT_WIDTH - 1 downto 0);
     signal acc_overflow : std_logic;
-    
+
     -- Activation function output
     signal act_out_sig : sfixed(INT_BITS - 1 downto -FRAC_BITS);
 
@@ -120,8 +120,7 @@ begin
     -- Input width is ACC_OUT_WIDTH, output is DATA_WIDTH (via types package)
     u_act: entity work.activation_func(sigmoid)
         generic map (
-            input_width => ACC_OUT_WIDTH,
-            input_frac_width => FRAC_BITS
+            input_width => ACC_OUT_WIDTH
         )
         port map (
             input_i => acc_sum,
