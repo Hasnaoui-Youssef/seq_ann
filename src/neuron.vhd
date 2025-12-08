@@ -55,11 +55,11 @@ architecture rtl of neuron is
     signal acc_overflow : std_logic;
 
     -- Activation function output
-    signal act_out_sig : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+    signal act_out_sig : sfixed_bus;
 
     -- Helper for fixed-point multiplication (for backward pass)
     function mult(a, b : std_logic_vector) return std_logic_vector is
-        variable res : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+        variable res : sfixed_bus;
     begin
         res := resize(to_sfixed(a, INT_BITS - 1, -FRAC_BITS) *
                       to_sfixed(b, INT_BITS - 1, -FRAC_BITS),
@@ -69,9 +69,9 @@ architecture rtl of neuron is
 
     -- Helper for sigmoid derivative: y * (1 - y)
     function calc_sigmoid_deriv(y : std_logic_vector) return std_logic_vector is
-        variable y_sf : sfixed(INT_BITS - 1 downto -FRAC_BITS);
-        variable one_sf : sfixed(INT_BITS - 1 downto -FRAC_BITS);
-        variable res : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+        variable y_sf : sfixed_bus;
+        variable one_sf : sfixed_bus;
+        variable res : sfixed_bus;
     begin
         y_sf := to_sfixed(y, INT_BITS - 1, -FRAC_BITS);
         one_sf := to_sfixed(1.0, INT_BITS - 1, -FRAC_BITS);

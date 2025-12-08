@@ -333,7 +333,7 @@ architecture testbench of {entity_name} is
     signal ready : std_logic;
 
     -- Test signals
-    signal output_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+    signal output_fixed : sfixed_bus;
 
 begin
     -- ========================================================================

@@ -10,18 +10,18 @@ package sigmoid_lut_pkg is
     constant LUT_SIZE : integer := 256;
     constant LUT_BITS : integer := 8;  -- k = log2(LUT_SIZE)
     
-    -- Range Configuration: [-2^RANGE_EXP, 2^RANGE_EXP)
-    constant RANGE_EXP : integer := 3;  -- n, range is [-2^n, 2^n)
+    -- Range Configuration: [-2^RANGE_BITS, 2^RANGE_BITS)
+    constant RANGE_BITS : integer := 3;  -- n, range is [-2^n, 2^n)
     
     -- Index extraction bounds (after MSB flip transformation)
     -- To get LUT index: resize with saturation, flip MSB, extract bits as unsigned
-    constant INDEX_HIGH : integer := 3;  -- = RANGE_EXP = n
-    constant INDEX_LOW : integer := -4;   -- = RANGE_EXP + 1 - LUT_BITS = n + 1 - k
+    constant INDEX_HIGH : integer := 3;  -- = RANGE_BITS = n
+    constant INDEX_LOW : integer := -4;   -- = RANGE_BITS + 1 - LUT_BITS = n + 1 - k
     constant INDEX_WIDTH : integer := INDEX_HIGH - INDEX_LOW + 1;  -- = LUT_BITS = k
 
     -- LUT stores fixed-point values directly (sfixed format)
     -- Note: LUT[0] = 0.0 and LUT[LUT_SIZE-1] = 1.0 are forced for proper saturation
-    type sigmoid_lut_type is array(0 to LUT_SIZE - 1) of sfixed(INT_BITS - 1 downto -FRAC_BITS);
+    type sigmoid_lut_type is array(0 to LUT_SIZE - 1) of sfixed_bus;
 
     constant SIGMOID_LUT : sigmoid_lut_type := (
         0 => "00000000000000000000000000000000",

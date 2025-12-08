@@ -93,9 +93,8 @@ architecture rtl of calculation_unit is
 
     -- Constants
     constant TOTAL_WEIGHTS : integer := calc_total_weights;
-    constant OUTPUT_SIZE   : integer := LAYER_SIZES(NUM_LAYERS - 1);
     constant MAX_SIZE      : integer := max_layer_size;
-    
+
     -- Memory layout: inputs at 0..NUM_INPUTS-1, weights at NUM_INPUTS..NUM_INPUTS+TOTAL_WEIGHTS-1
     constant WEIGHT_BASE_ADDR : integer := NUM_INPUTS;
 
@@ -110,7 +109,7 @@ architecture rtl of calculation_unit is
 
     -- Input storage (fetched from memory)
     signal input_buffer : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
-    
+
     -- Weight storage (flat array for all layers)
     signal all_weights : std_logic_bus_array(0 to TOTAL_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
     signal all_grads   : std_logic_bus_array(0 to TOTAL_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
@@ -130,7 +129,7 @@ architecture rtl of calculation_unit is
     signal state : state_t := IDLE;
     signal fetch_idx : integer := 0;
     signal store_idx : integer := 0;
-    
+
     -- Forward pass control
     signal fwd_trigger : std_logic := '0';
     signal fwd_complete : std_logic := '0';
@@ -165,7 +164,7 @@ begin
                 fwd_trigger <= '0';
                 fwd_ctrl(0).valid <= '0';
                 fwd_ctrl(0).last <= '0';
-                
+
                 case state is
                     when IDLE =>
                         ready <= '1';

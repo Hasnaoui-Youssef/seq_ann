@@ -3,23 +3,37 @@
 import argparse
 import math
 from pathlib import Path
-from config import SigmoidConfig, sigmoid
+import sys
+
+# Add scripts directory to path for imports
+scripts_dir = Path(__file__).parent
+sys.path.insert(0, str(scripts_dir))
+
+from config import auto_load_config, SigmoidConfig as YamlSigmoidConfig
+
+
+def sigmoid(x: float) -> float:
+    """Compute sigmoid function."""
+    return 1.0 / (1.0 + math.exp(-x))
 
 def get_sfixed_range(config):
     """Get sfixed range using INT_BITS and FRAC_BITS from config"""
     return config.int_bits - 1, -config.frac_bits
 
-def generate_activation_func_tb(config : SigmoidConfig, output_file="testbench/activation_func_tb.vhd"):
+def generate_activation_func_tb(sigmoid_config: YamlSigmoidConfig, int_bits: int, frac_bits: int, 
+                                num_test_inputs: int, output_file: str = "testbench/activation_func_tb.vhd"):
     """Generate VHDL testbench for sigmoid activation function"""
 
     # Generate test vectors
     test_vectors = []
-    x_min, x_max = config.input_range
+    x_min, x_max = sigmoid_config.input_range
 
-    for i in range(config.num_test_inputs):
-        x = x_min + (x_max - x_min) * i / (config.num_test_inputs - 1)
+    for i in range(num_test_inputs):
+        x = x_min + (x_max - x_min) * i / (num_test_inputs - 1)
         expected = sigmoid(x)
         test_vectors.append((x, expected))
+
+    data_width = int_bits + frac_bits
 
     vhdl_code = f"""library ieee;
 use ieee.std_logic_1164.all;
@@ -35,15 +49,15 @@ end entity activation_func_tb;
 architecture testbench of activation_func_tb is
     -- Test signals
     signal input_s : std_logic_vector(DATA_WIDTH - 1 downto 0);
-    signal output_s : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+    signal output_s : sfixed_bus;
 
     -- Helper signals
-    signal input_sfixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+    signal input_sfixed : sfixed_bus;
     signal input_real : real;
     signal output_real : real;
 
     -- Test configuration
-    constant NUM_TESTS : integer := {config.num_test_inputs};
+    constant NUM_TESTS : integer := {num_test_inputs};
     type real_array is array (0 to NUM_TESTS - 1) of real;
 
     -- Test vectors: input values
@@ -155,11 +169,12 @@ end architecture testbench;
     print(f"Generated testbench: {output_file}")
     return output_file
 
-def generate_neuron_tb(config : SigmoidConfig, output_file="testbench/neuron_tb.vhd"):
+def generate_neuron_tb(sigmoid_config: YamlSigmoidConfig, int_bits: int, frac_bits: int,
+                       output_file: str = "testbench/neuron_tb.vhd"):
     """Generate VHDL testbench for neuron with backpropagation interface"""
 
     # Calculate max step in LUT for tolerance
-    input_step = (config.input_range[1] - config.input_range[0]) / config.lut_size
+    input_step = (sigmoid_config.input_range[1] - sigmoid_config.input_range[0]) / sigmoid_config.lut_size
     max_lut_step = 0.25 * input_step
     tolerance = max_lut_step * 1.5
 
@@ -284,9 +299,9 @@ begin
         variable fail_count : integer := 0;
         variable expected_sigmoid : real;
         variable output_real : real;
-        variable input_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
-        variable weight_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
-        variable output_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+        variable input_fixed : sfixed_bus;
+        variable weight_fixed : sfixed_bus;
+        variable output_fixed : sfixed_bus;
     begin
         report "========================================";
         report "Starting Neuron Test";
@@ -406,11 +421,12 @@ end architecture testbench;
     print(f"Generated neuron testbench: {output_file}")
     return output_file
 
-def generate_layer_tb(config : SigmoidConfig, output_file="testbench/layer_tb.vhd"):
+def generate_layer_tb(sigmoid_config: YamlSigmoidConfig, int_bits: int, frac_bits: int,
+                      output_file: str = "testbench/layer_tb.vhd"):
     """Generate VHDL testbench for layer"""
 
     # Calculate tolerance
-    input_step = (config.input_range[1] - config.input_range[0]) / config.lut_size
+    input_step = (sigmoid_config.input_range[1] - sigmoid_config.input_range[0]) / sigmoid_config.lut_size
     max_lut_step = 0.25 * input_step
     tolerance = max_lut_step * 2.0 # Slightly looser for layer due to accumulation
 
@@ -601,47 +617,64 @@ def main():
     parser = argparse.ArgumentParser(
         description='Generate testbenches for VHDL components'
     )
-    parser.add_argument('--lut-size', type=int, default=256,
-                        help='Number of LUT entries (default: 256)')
-    parser.add_argument('--data-width', type=int, default=32,
-                        help='Data width in bits (default: 32)')
-    parser.add_argument('--frac-bits', type=int, default=16,
-                        help='Fractional bits (default: 16)')
+    parser.add_argument('--config', type=str, default=None,
+                        help='Path to YAML config file (searches for *.nn_conf.yaml if not specified)')
+    parser.add_argument('--root', type=str, default='.',
+                        help='Project root directory (default: current directory)')
     parser.add_argument('--num-tests', type=int, default=16,
                         help='Number of test vectors (default: 16)')
-    parser.add_argument('--range-exp', type=int, default=3,
-                        help='Range exponent n for symmetric range [-2^n, 2^n) (default: 3)')
 
     args = parser.parse_args()
 
-    # Create configuration
-    config = SigmoidConfig(
-        lut_size=args.lut_size,
-        data_width=args.data_width,
-        frac_bits=args.frac_bits,
-        num_test_inputs=args.num_tests,
-        range_exp=args.range_exp
-    )
+    root_dir = Path(args.root).resolve()
+
+    # Load configuration
+    try:
+        config = auto_load_config(root_dir, args.config)
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        return 1
+    except ValueError as e:
+        print(f"Configuration error: {e}")
+        return 1
 
     print("=" * 60)
     print("Testbench Generation")
     print("=" * 60)
 
+    tb_dir = root_dir / "testbench"
+
     # Generate activation function testbench
     print("\n[1/3] Generating activation function testbench...")
-    generate_activation_func_tb(config)
+    generate_activation_func_tb(
+        config.sigmoid, config.int_bits, config.frac_bits,
+        args.num_tests, str(tb_dir / "activation_func_tb.vhd")
+    )
 
     # Generate neuron testbench
     print("\n[2/3] Generating neuron testbench...")
-    generate_neuron_tb(config)
+    generate_neuron_tb(
+        config.sigmoid, config.int_bits, config.frac_bits,
+        str(tb_dir / "neuron_tb.vhd")
+    )
 
     # Generate layer testbench
     print("\n[3/3] Generating layer testbench...")
-    generate_layer_tb(config)
+    generate_layer_tb(
+        config.sigmoid, config.int_bits, config.frac_bits,
+        str(tb_dir / "layer_tb.vhd")
+    )
 
     print("\n" + "=" * 60)
     print("Testbench Generation Complete!")
     print("=" * 60)
+    return 0
+
+    print("\n" + "=" * 60)
+    print("Testbench Generation Complete!")
+    print("=" * 60)
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

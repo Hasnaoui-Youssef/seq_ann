@@ -12,10 +12,10 @@ end entity activation_func_tb;
 architecture testbench of activation_func_tb is
     -- Test signals
     signal input_s : std_logic_vector(DATA_WIDTH - 1 downto 0);
-    signal output_s : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+    signal output_s : sfixed_bus;
 
     -- Helper signals
-    signal input_sfixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+    signal input_sfixed : sfixed_bus;
     signal input_real : real;
     signal output_real : real;
 

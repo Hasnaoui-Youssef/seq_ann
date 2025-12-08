@@ -1,0 +1,17 @@
+precision:
+  int_bits: 16
+  frac_bits: 16
+
+sigmoid:
+  lut_bits: 8    # 256 entries
+  range_bits: 3  # [-8, 8)
+
+network:
+  name: xor_network
+  layers:
+    - type: dense
+      neurons: 3
+      activation: sigmoid
+    - type: dense
+      neurons: 1
+      activation: sigmoid

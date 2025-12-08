@@ -1,0 +1,315 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Neural Network Accelerator Configuration",
+  "description": "Configuration schema for VHDL neural network generation",
+  "type": "object",
+  "required": ["precision", "sigmoid", "network"],
+  "additionalProperties": false,
+  "properties": {
+    "precision": {
+      "type": "object",
+      "description": "Fixed-point precision settings. Specify either (int_bits + frac_bits) or total_bits.",
+      "additionalProperties": false,
+      "properties": {
+        "int_bits": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32,
+          "description": "Number of integer bits (including sign)"
+        },
+        "frac_bits": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32,
+          "description": "Number of fractional bits"
+        },
+        "total_bits": {
+          "type": "integer",
+          "enum": [8, 16, 32, 64],
+          "description": "Total data width (split evenly between int and frac if int_bits/frac_bits not specified)"
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["int_bits", "frac_bits"],
+          "not": {"required": ["total_bits"]}
+        },
+        {
+          "required": ["total_bits"],
+          "not": {"required": ["int_bits", "frac_bits"]}
+        }
+      ]
+    },
+    "sigmoid": {
+      "type": "object",
+      "description": "Sigmoid LUT configuration",
+      "required": ["lut_bits", "range_bits"],
+      "additionalProperties": false,
+      "properties": {
+        "lut_bits": {
+          "type": "integer",
+          "minimum": 4,
+          "maximum": 12,
+          "description": "Number of bits to address LUT (k where size = 2^k)"
+        },
+        "range_bits": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Range exponent n for [-2^n, 2^n)"
+        }
+      }
+    },
+    "parallelism": {
+      "type": "object",
+      "description": "Hardware parallelism settings",
+      "additionalProperties": false,
+      "properties": {
+        "conv_parallel_positions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "default": 1,
+          "description": "Number of kernel positions computed in parallel for Conv2D"
+        },
+        "batch_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256,
+          "default": 1,
+          "description": "Mini-batch size for training"
+        }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "description": "Memory configuration",
+      "additionalProperties": false,
+      "properties": {
+        "bram_depth": {
+          "type": "integer",
+          "minimum": 256,
+          "maximum": 65536,
+          "default": 1024,
+          "description": "BRAM depth in words"
+        },
+        "input_base_addr": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Base address for input data"
+        },
+        "weights_base_addr": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 256,
+          "description": "Base address for weights"
+        },
+        "output_base_addr": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 61440,
+          "description": "Base address for output data (0xF000)"
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "description": "Neural network architecture",
+      "required": ["name", "layers"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "description": "Network name (valid VHDL identifier)"
+        },
+        "layers": {
+          "type": "array",
+          "minItems": 1,
+          "description": "List of layer configurations",
+          "items": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["dense", "conv2d", "maxpool", "avgpool", "flatten", "relu", "sigmoid"],
+                "description": "Layer type"
+              }
+            },
+            "allOf": [
+              {
+                "if": {"properties": {"type": {"const": "dense"}}},
+                "then": {
+                  "required": ["type", "neurons"],
+                  "properties": {
+                    "type": {"const": "dense"},
+                    "neurons": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 4096,
+                      "description": "Number of neurons"
+                    },
+                    "activation": {
+                      "type": "string",
+                      "enum": ["none", "sigmoid", "relu", "tanh"],
+                      "default": "sigmoid",
+                      "description": "Activation function"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              {
+                "if": {"properties": {"type": {"const": "conv2d"}}},
+                "then": {
+                  "required": ["type", "out_channels", "kernel_size"],
+                  "properties": {
+                    "type": {"const": "conv2d"},
+                    "in_channels": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "description": "Input channels (inferred from previous layer if omitted)"
+                    },
+                    "out_channels": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 512,
+                      "description": "Output channels (number of filters)"
+                    },
+                    "kernel_size": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 11,
+                      "description": "Kernel size (assumes square kernel)"
+                    },
+                    "stride": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 4,
+                      "default": 1,
+                      "description": "Stride"
+                    },
+                    "padding": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 5,
+                      "default": 0,
+                      "description": "Padding"
+                    },
+                    "activation": {
+                      "type": "string",
+                      "enum": ["none", "sigmoid", "relu", "tanh"],
+                      "default": "relu",
+                      "description": "Activation function"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              {
+                "if": {"properties": {"type": {"const": "maxpool"}}},
+                "then": {
+                  "required": ["type", "kernel_size"],
+                  "properties": {
+                    "type": {"const": "maxpool"},
+                    "kernel_size": {
+                      "type": "integer",
+                      "minimum": 2,
+                      "maximum": 4,
+                      "description": "Pooling kernel size"
+                    },
+                    "stride": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 4,
+                      "description": "Stride (defaults to kernel_size)"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              {
+                "if": {"properties": {"type": {"const": "avgpool"}}},
+                "then": {
+                  "required": ["type", "kernel_size"],
+                  "properties": {
+                    "type": {"const": "avgpool"},
+                    "kernel_size": {
+                      "type": "integer",
+                      "minimum": 2,
+                      "maximum": 4,
+                      "description": "Pooling kernel size"
+                    },
+                    "stride": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 4,
+                      "description": "Stride (defaults to kernel_size)"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              {
+                "if": {"properties": {"type": {"const": "flatten"}}},
+                "then": {
+                  "properties": {
+                    "type": {"const": "flatten"}
+                  },
+                  "additionalProperties": false
+                }
+              },
+              {
+                "if": {"properties": {"type": {"const": "relu"}}},
+                "then": {
+                  "properties": {
+                    "type": {"const": "relu"}
+                  },
+                  "additionalProperties": false
+                }
+              },
+              {
+                "if": {"properties": {"type": {"const": "sigmoid"}}},
+                "then": {
+                  "properties": {
+                    "type": {"const": "sigmoid"}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "training": {
+      "type": "object",
+      "description": "Training configuration (optional)",
+      "additionalProperties": false,
+      "properties": {
+        "learning_rate": {
+          "type": "number",
+          "minimum": 0.0001,
+          "maximum": 1.0,
+          "default": 0.01,
+          "description": "Learning rate"
+        },
+        "epochs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000,
+          "default": 1000,
+          "description": "Number of training epochs"
+        },
+        "optimizer": {
+          "type": "string",
+          "enum": ["sgd", "adam"],
+          "default": "sgd",
+          "description": "Optimizer type"
+        }
+      }
+    }
+  }
+}

@@ -119,9 +119,9 @@ begin
         variable fail_count : integer := 0;
         variable expected_sigmoid : real;
         variable output_real : real;
-        variable input_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
-        variable weight_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
-        variable output_fixed : sfixed(INT_BITS - 1 downto -FRAC_BITS);
+        variable input_fixed : sfixed_bus;
+        variable weight_fixed : sfixed_bus;
+        variable output_fixed : sfixed_bus;
     begin
         report "========================================";
         report "Starting Neuron Test";

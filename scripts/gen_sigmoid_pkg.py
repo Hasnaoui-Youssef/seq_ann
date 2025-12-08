@@ -1,19 +1,34 @@
 #!/usr/bin/env python3
 
 import argparse
+import math
 from pathlib import Path
-from config import SigmoidConfig, sigmoid
+import sys
 
-def generate_sigmoid_lut(config : SigmoidConfig):
+# Add scripts directory to path for imports
+scripts_dir = Path(__file__).parent
+sys.path.insert(0, str(scripts_dir))
+
+from config import auto_load_config, SigmoidConfig as YamlSigmoidConfig
+
+
+def sigmoid(x: float) -> float:
+    """Compute sigmoid function."""
+    return 1.0 / (1.0 + math.exp(-x))
+
+
+def generate_sigmoid_lut(config: YamlSigmoidConfig, frac_bits: int):
+    """Generate LUT values for sigmoid function."""
     lut = []
     x_min, x_max = config.input_range
-    for i in range(config.lut_size):
-        x = x_min + (x_max - x_min) * i / (config.lut_size - 1)
+    lut_size = config.lut_size
+    
+    for i in range(lut_size):
+        x = x_min + (x_max - x_min) * i / (lut_size - 1)
         sig_val = sigmoid(x)
         lut.append((i, x, sig_val))
     
     # Force edge values to exact 0 and 1 for proper saturation behavior
-    # When resize saturates, it maps to these edge entries
     idx_first, x_first, _ = lut[0]
     idx_last, x_last, _ = lut[-1]
     lut[0] = (idx_first, x_first, 0.0)
@@ -21,7 +36,8 @@ def generate_sigmoid_lut(config : SigmoidConfig):
 
     return lut
 
-def float_to_fixed_bin(value, int_bits, frac_bits):
+
+def float_to_fixed_bin(value: float, int_bits: int, frac_bits: int) -> str:
     """Convert float to fixed-point binary string for VHDL."""
     total_bits = int_bits + frac_bits
     scale = 2 ** frac_bits
@@ -37,10 +53,17 @@ def float_to_fixed_bin(value, int_bits, frac_bits):
     
     return f'"{fixed_val:0{total_bits}b}"'
 
-def generate_vhdl_lut_package(config : SigmoidConfig, lut, output_file="src/sigmoid_lut_pkg.vhd"):
-    high_bit, low_bit = config.get_index_range()
-    int_bits = config.int_bits
-    frac_bits = config.frac_bits
+
+def generate_vhdl_lut_package(
+    sigmoid_config: YamlSigmoidConfig,
+    int_bits: int,
+    frac_bits: int,
+    lut: list,
+    output_file: str = "src/sigmoid_lut_pkg.vhd"
+):
+    """Generate VHDL package file for sigmoid LUT."""
+    high_bit = sigmoid_config.index_high
+    low_bit = sigmoid_config.index_low
     
     vhdl_code = f"""library ieee;
 use ieee.std_logic_1164.all;
@@ -51,21 +74,21 @@ use work.types.all;
 
 package sigmoid_lut_pkg is
     -- LUT Configuration
-    constant LUT_SIZE : integer := {config.lut_size};
-    constant LUT_BITS : integer := {config.lut_bits};  -- k = log2(LUT_SIZE)
+    constant LUT_SIZE : integer := {sigmoid_config.lut_size};
+    constant LUT_BITS : integer := {sigmoid_config.lut_bits};  -- k = log2(LUT_SIZE)
     
-    -- Range Configuration: [-2^RANGE_EXP, 2^RANGE_EXP)
-    constant RANGE_EXP : integer := {config.range_exp};  -- n, range is [-2^n, 2^n)
+    -- Range Configuration: [-2^RANGE_BITS, 2^RANGE_BITS)
+    constant RANGE_BITS : integer := {sigmoid_config.range_bits};  -- n, range is [-2^n, 2^n)
     
     -- Index extraction bounds (after MSB flip transformation)
     -- To get LUT index: resize with saturation, flip MSB, extract bits as unsigned
-    constant INDEX_HIGH : integer := {high_bit};  -- = RANGE_EXP = n
-    constant INDEX_LOW : integer := {low_bit};   -- = RANGE_EXP + 1 - LUT_BITS = n + 1 - k
+    constant INDEX_HIGH : integer := {high_bit};  -- = RANGE_BITS = n
+    constant INDEX_LOW : integer := {low_bit};   -- = RANGE_BITS + 1 - LUT_BITS = n + 1 - k
     constant INDEX_WIDTH : integer := INDEX_HIGH - INDEX_LOW + 1;  -- = LUT_BITS = k
 
     -- LUT stores fixed-point values directly (sfixed format)
     -- Note: LUT[0] = 0.0 and LUT[LUT_SIZE-1] = 1.0 are forced for proper saturation
-    type sigmoid_lut_type is array(0 to LUT_SIZE - 1) of sfixed(INT_BITS - 1 downto -FRAC_BITS);
+    type sigmoid_lut_type is array(0 to LUT_SIZE - 1) of sfixed_bus;
 
     constant SIGMOID_LUT : sigmoid_lut_type := (
 """
@@ -79,25 +102,20 @@ package sigmoid_lut_pkg is
 end package sigmoid_lut_pkg;
 """
 
-    Path(output_file).parent.mkdir(parents = True, exist_ok=True)
+    Path(output_file).parent.mkdir(parents=True, exist_ok=True)
     with open(output_file, 'w') as f:
         f.write(vhdl_code)
 
-    print("Generated LUT package file")
+    print(f"Generated LUT package: {output_file}")
     return output_file
 
 
-
-
-def update_makefile(makefile_path="Makefile"):
-    """Update Makefile to include sigmoid LUT package"""
-
+def update_makefile(makefile_path: str = "Makefile"):
+    """Update Makefile to include sigmoid LUT package."""
     with open(makefile_path, 'r') as f:
         content = f.read()
 
-    # Check if sigmoid_lut_pkg is already in FILES
     if 'sigmoid_lut_pkg.vhd' not in content:
-        # Add after types.vhd
         new_content = content.replace(
             'FILES =\tsrc/types.vhd',
             'FILES =\tsrc/types.vhd \t\t\\\n\t\tsrc/sigmoid_lut_pkg.vhd'
@@ -110,60 +128,57 @@ def update_makefile(makefile_path="Makefile"):
     else:
         print(f"{makefile_path} already includes sigmoid_lut_pkg.vhd")
 
+
 def main():
     parser = argparse.ArgumentParser(
         description='Generate sigmoid LUT and package for VHDL'
     )
-    parser.add_argument('--lut-size', type=int, default=256,
-                        help='Number of LUT entries (default: 256)')
-    parser.add_argument('--data-width', type=int, default=32,
-                        help='Data width in bits (default: 32)')
-    parser.add_argument('--frac-bits', type=int, default=16,
-                        help='Fractional bits (default: 16)')
-    parser.add_argument('--range-exp', type=int, default=3,
-                        help='Range exponent n for symmetric range [-2^n, 2^n) (default: 3, i.e. [-8, 8))')
+    parser.add_argument('--config', type=str, default=None,
+                        help='Path to YAML config file (searches for *.nn_conf.yaml if not specified)')
+    parser.add_argument('--root', type=str, default='.',
+                        help='Project root directory (default: current directory)')
 
     args = parser.parse_args()
 
-    # Create configuration
+    root_dir = Path(args.root).resolve()
+
+    # Load configuration
     try:
-        config = SigmoidConfig(
-            lut_size=args.lut_size,
-            data_width=args.data_width,
-            frac_bits=args.frac_bits,
-            range_exp=args.range_exp
-        )
+        config = auto_load_config(root_dir, args.config)
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        return 1
     except ValueError as e:
         print(f"Configuration error: {e}")
-        return
+        return 1
 
     print("=" * 60)
     print("Sigmoid Package Generation")
     print("=" * 60)
-    print(f"LUT Size: {config.lut_size} entries (k = {config.lut_bits} bits)")
-    print(f"Range: [-2^{config.range_exp}, 2^{config.range_exp}) = [{config.input_range[0]}, {config.input_range[1]})")
+    print(f"LUT Size: {config.sigmoid.lut_size} entries (k = {config.sigmoid.lut_bits} bits)")
+    print(f"Range: [-2^{config.sigmoid.range_bits}, 2^{config.sigmoid.range_bits}) = [{config.sigmoid.input_range[0]}, {config.sigmoid.input_range[1]})")
     print(f"Data Width: {config.data_width} bits ({config.int_bits} int, {config.frac_bits} frac)")
-    print(f"Index extraction: bits ({config.index_high} downto {config.index_low})")
-    print(f"Overflow check bits: {config.overflow_check_bits}")
+    print(f"Index extraction: bits ({config.sigmoid.index_high} downto {config.sigmoid.index_low})")
     print("=" * 60)
 
     # Generate LUT
-    print("\n[1/3] Generating sigmoid LUT...")
-    lut = generate_sigmoid_lut(config)
+    print("\n[1/2] Generating sigmoid LUT...")
+    lut = generate_sigmoid_lut(config.sigmoid, config.frac_bits)
 
     # Generate VHDL LUT package
-    print("\n[2/3] Generating VHDL LUT package...")
-    generate_vhdl_lut_package(config, lut)
-
-
+    print("\n[2/2] Generating VHDL LUT package...")
+    output_file = root_dir / "src" / "sigmoid_lut_pkg.vhd"
+    generate_vhdl_lut_package(config.sigmoid, config.int_bits, config.frac_bits, lut, str(output_file))
 
     # Update Makefile
     print("\n[Optional] Updating Makefile...")
-    update_makefile()
+    update_makefile(str(root_dir / "Makefile"))
 
     print("\n" + "=" * 60)
     print("Package Generation Complete!")
     print("=" * 60)
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -1,4 +1,18 @@
+"""
+DEPRECATED: This module is deprecated. Use 'from config import ...' instead.
+
+This file is kept for backward compatibility with gen_neural_network.py.
+It will be removed once gen_neural_network.py is updated to use YAML config.
+"""
+
 import math
+import warnings
+
+warnings.warn(
+    "scripts/config.py is deprecated. Use 'from config import ...' instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 def is_power_of_two(n):
     """Check if n is a positive power of two."""
@@ -61,7 +75,7 @@ class SigmoidConfig:
         
         # Number of upper bits to check for overflow detection
         # We compare input bits above range_exp with all-ones/all-zeros
-        # For sfixed(INT_BITS-1 downto -FRAC_BITS), we check (INT_BITS-1 downto range_exp+1)
+        # For sfixed_bus, we check (INT_BITS-1 downto range_exp+1)
         self.overflow_check_bits = self.int_bits - 1 - self.range_exp
 
     def get_index_range(self):
