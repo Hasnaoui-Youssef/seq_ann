@@ -28,26 +28,45 @@ entity layer is
 
         -- Backward Interface
         bwd_ctrl_in  : in layer_control_t;
-        bwd_error_in : in std_logic_bus_array(0 to LAYER_SIZE - 1)(DATA_WIDTH - 1 downto 0); -- Error from next layer
+        bwd_error_in : in std_logic_bus_array(0 to LAYER_SIZE - 1)(DATA_WIDTH - 1 downto 0);
         
         bwd_ctrl_out : out layer_control_t;
-        bwd_error_out: out std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0); -- Error to prev layer
+        bwd_error_out: out std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
 
-        -- Weights Interface
-        weights_in : in std_logic_bus_array(0 to (NUM_INPUTS + 1) * LAYER_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        -- Weight Bank Interface (instead of direct weights_in)
+        weight_load_en   : in  std_logic;
+        weight_load_data : in  std_logic_vector(DATA_WIDTH - 1 downto 0);
+        weight_load_done : out std_logic;
+
+        weight_save_en   : in  std_logic;
+        weight_save_data : out std_logic_vector(DATA_WIDTH - 1 downto 0);
+        weight_save_done : out std_logic;
+
+        -- Gradient update (training)
+        weight_update_en   : in  std_logic;
+        weight_learn_rate  : in  std_logic_vector(DATA_WIDTH - 1 downto 0);
+        weight_update_done : out std_logic;
         
-        -- Gradients Output
+        -- Gradients Output (for external use if needed)
         grads_out : out std_logic_bus_array(0 to (NUM_INPUTS + 1) * LAYER_SIZE - 1)(DATA_WIDTH - 1 downto 0)
     );
 end entity layer;
 
 architecture rtl of layer is
 
+    -- Weight count for this layer
+    constant NUM_WEIGHTS : integer := (NUM_INPUTS + 1) * LAYER_SIZE;
+
     -- Internal Signals
     signal neuron_outputs : std_logic_bus_array(0 to LAYER_SIZE - 1)(DATA_WIDTH - 1 downto 0);
     
+    -- Weights from weight bank (directly connected to neurons)
+    signal weights_internal : std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
+
+    -- Gradients collected from neurons
+    signal grads_internal : std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
+    
     -- Input Error Accumulator (dL/dx sum from all neurons)
-    -- Array of arrays: [Neuron][Input]
     type input_grad_array is array (0 to LAYER_SIZE - 1) of std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
     signal input_grads : input_grad_array;
 
@@ -65,6 +84,29 @@ architecture rtl of layer is
 
 begin
 
+    -- Instantiate Weight Bank
+    u_weight_bank: entity work.weight_bank
+        generic map (
+            NUM_WEIGHTS => NUM_WEIGHTS
+        )
+        port map (
+            clk => clk,
+            rst => rst,
+            load_en => weight_load_en,
+            load_data => weight_load_data,
+            load_done => weight_load_done,
+            load_idx => open,
+            weights_o => weights_internal,
+            update_en => weight_update_en,
+            grad_data => grads_internal,
+            learn_rate => weight_learn_rate,
+            update_done => weight_update_done,
+            save_en => weight_save_en,
+            save_data => weight_save_data,
+            save_done => weight_save_done,
+            save_idx => open
+        );
+
     -- Pass through control signals with pipeline delay
     process(clk)
     begin
@@ -73,8 +115,6 @@ begin
                 fwd_ctrl_out.valid <= '0';
                 fwd_ctrl_out.last <= '0';
                 bwd_ctrl_out.valid <= '0'; 
-                -- bwd_ctrl_out.last <= '0'; -- bwd_ctrl_t might not have last? Check pkg_layer.
-                -- pkg_layer: layer_control_t has valid, last.
                 bwd_ctrl_out.last <= '0';
             else
                 fwd_ctrl_out <= fwd_ctrl_in;
@@ -84,6 +124,7 @@ begin
     end process;
     
     fwd_data_out <= neuron_outputs;
+    grads_out <= grads_internal;
 
     -- Instantiate Neurons
     gen_neurons: for i in 0 to LAYER_SIZE - 1 generate
@@ -97,17 +138,17 @@ begin
         signal n_grad_bias    : std_logic_vector(DATA_WIDTH - 1 downto 0);
         
     begin
-        -- Assign Weights
+        -- Assign Weights from weight bank
         assign_w: for j in 0 to NUM_INPUTS - 1 generate
-            n_weights(j) <= weights_in(w_start + j);
+            n_weights(j) <= weights_internal(w_start + j);
         end generate;
-        n_bias <= weights_in(w_start + NUM_INPUTS);
+        n_bias <= weights_internal(w_start + NUM_INPUTS);
 
-        -- Assign Gradients to Output
+        -- Assign Gradients to internal array (for weight bank update)
         assign_g: for j in 0 to NUM_INPUTS - 1 generate
-            grads_out(w_start + j) <= n_grad_weights(j);
+            grads_internal(w_start + j) <= n_grad_weights(j);
         end generate;
-        grads_out(w_start + NUM_INPUTS) <= n_grad_bias;
+        grads_internal(w_start + NUM_INPUTS) <= n_grad_bias;
 
         -- Neuron Instance
         u_neuron: entity work.neuron
@@ -132,7 +173,6 @@ begin
     end generate;
 
     -- Backward Error Aggregation (dL/dx to previous layer)
-    -- For each input j, sum(dL/dx_j from all neurons)
     gen_bwd_out: for j in 0 to NUM_INPUTS - 1 generate
         bwd_error_out(j) <= sum_input_grads(j, input_grads);
     end generate;

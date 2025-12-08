@@ -16,10 +16,14 @@ entity neural_network is
         rst : in std_logic;
 
         -- Control Interface
-        start       : in std_logic;
-        train_mode  : in std_logic;
-        ready       : out std_logic;
-        done        : out std_logic;
+        load_weights : in std_logic;   -- Trigger weight loading from memory
+        start        : in std_logic;   -- Start inference (weights must be loaded)
+        train_mode   : in std_logic;
+        
+        -- Status
+        weights_loaded : out std_logic;  -- Weights are loaded
+        ready          : out std_logic;
+        done           : out std_logic;
 
         -- Host Interface (Memory Loading: inputs at 0..NUM_INPUTS-1, weights after)
         host_write_en : in std_logic;
@@ -40,6 +44,7 @@ architecture rtl of neural_network is
     signal calc_store  : std_logic;
     signal calc_done   : std_logic;
     signal calc_ready  : std_logic;
+    signal calc_weights_loaded : std_logic;
     signal learning_rate : std_logic_vector(DATA_WIDTH - 1 downto 0);
 
     -- Memory <-> Calc Interface
@@ -53,6 +58,9 @@ architecture rtl of neural_network is
     signal mem_update_grad : std_logic_vector(DATA_WIDTH - 1 downto 0);
 
 begin
+
+    -- Status outputs
+    weights_loaded <= calc_weights_loaded;
 
     -- Control Unit
     u_control : entity work.control_unit
@@ -99,9 +107,11 @@ begin
         port map (
             clk => clk,
             rst => rst,
+            load_weights => load_weights,
             start => calc_start,
             mode => calc_mode,
             start_store => calc_store,
+            weights_loaded => calc_weights_loaded,
             ready => calc_ready,
             done => calc_done,
             output_data => output_data,

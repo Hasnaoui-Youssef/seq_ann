@@ -15,13 +15,15 @@ entity calculation_unit is
         rst : in std_logic;
 
         -- Control Interface
-        start       : in std_logic;  -- Start inference/training
-        mode        : in std_logic;  -- '0' = Forward, '1' = Backward
-        start_store : in std_logic;  -- Trigger to write gradients to memory
+        load_weights : in std_logic;  -- Start weight loading from memory
+        start        : in std_logic;  -- Start inference (weights must be loaded)
+        mode         : in std_logic;  -- '0' = Forward, '1' = Backward
+        start_store  : in std_logic;  -- Trigger to write gradients to memory
 
         -- Status
-        ready : out std_logic;  -- Ready to accept new start
-        done  : out std_logic;  -- Inference/backward pass complete
+        weights_loaded : out std_logic;  -- Weights are loaded and ready
+        ready          : out std_logic;  -- Ready to accept new start
+        done           : out std_logic;  -- Inference/backward pass complete
 
         -- Network Outputs (Forward)
         output_data  : out std_logic_vector(DATA_WIDTH - 1 downto 0);
@@ -51,10 +53,20 @@ architecture rtl of calculation_unit is
         variable prev_size : integer := NUM_INPUTS;
     begin
         for i in LAYER_SIZES'range loop
-            total := total + (prev_size + 1) * LAYER_SIZES(i);  -- weights + bias per neuron
+            total := total + (prev_size + 1) * LAYER_SIZES(i);
             prev_size := LAYER_SIZES(i);
         end loop;
         return total;
+    end function;
+
+    -- Calculate weight count for a specific layer
+    function calc_layer_weight_count(layer_idx : integer) return integer is
+        variable prev_size : integer := NUM_INPUTS;
+    begin
+        for i in 0 to layer_idx - 1 loop
+            prev_size := LAYER_SIZES(i);
+        end loop;
+        return (prev_size + 1) * LAYER_SIZES(layer_idx);
     end function;
 
     -- Calculate weight offset for a specific layer
@@ -110,38 +122,49 @@ architecture rtl of calculation_unit is
     -- Input storage (fetched from memory)
     signal input_buffer : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
 
-    -- Weight storage (flat array for all layers)
-    signal all_weights : std_logic_bus_array(0 to TOTAL_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
-    signal all_grads   : std_logic_bus_array(0 to TOTAL_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
+    -- Weight loading signals (directly to layers)
+    signal layer_weight_load_en   : std_logic_vector(0 to NUM_LAYERS - 1) := (others => '0');
+    signal layer_weight_load_done : std_logic_vector(0 to NUM_LAYERS - 1);
 
     -- State Machine
     type state_t is (
-        IDLE,               -- Ready for start signal
-        FETCH_INPUTS_REQ,   -- Request input from memory
-        FETCH_INPUTS_WAIT,  -- Wait for input data
-        FETCH_WEIGHTS_REQ,  -- Request weight from memory
-        FETCH_WEIGHTS_WAIT, -- Wait for weight data
-        FORWARD_START,      -- Trigger forward pass
-        FORWARD_WAIT,       -- Wait for forward pass completion
-        STORE_GRADIENTS,    -- Store gradients to memory (training)
-        DONE_STATE          -- Signal completion
+        IDLE,                   -- Ready for commands
+        LOAD_WEIGHTS_REQ,       -- Request weight from memory
+        LOAD_WEIGHTS_WAIT,      -- Wait for weight data
+        LOAD_WEIGHTS_SEND,      -- Send weight to layer
+        WEIGHTS_READY,          -- Weights loaded, ready for inference
+        FETCH_INPUTS_REQ,       -- Request input from memory
+        FETCH_INPUTS_WAIT,      -- Wait for input data
+        FORWARD_START,          -- Trigger forward pass
+        FORWARD_WAIT,           -- Wait for forward pass completion
+        STORE_GRADIENTS,        -- Store gradients to memory (training)
+        DONE_STATE              -- Signal completion
     );
     signal state : state_t := IDLE;
+
+    -- Counters and indices
     signal fetch_idx : integer := 0;
     signal store_idx : integer := 0;
+    signal current_layer : integer range 0 to NUM_LAYERS - 1 := 0;
+    signal layer_weight_idx : integer := 0;  -- Index within current layer
+
+    -- Status registers
+    signal weights_loaded_reg : std_logic := '0';
 
     -- Forward pass control
-    signal fwd_trigger : std_logic := '0';
     signal fwd_complete : std_logic := '0';
 
 begin
 
     -- Forward pass completion detection
-    -- The forward pass is complete when output_valid goes high
     fwd_complete <= fwd_ctrl(NUM_LAYERS).valid;
+
+    -- Status outputs
+    weights_loaded <= weights_loaded_reg;
 
     -- Main State Machine
     process(clk)
+        variable layer_weight_count : integer;
     begin
         if rising_edge(clk) then
             if rst = '1' then
@@ -150,29 +173,91 @@ begin
                 mem_update_en <= '0';
                 fetch_idx <= 0;
                 store_idx <= 0;
+                current_layer <= 0;
+                layer_weight_idx <= 0;
                 ready <= '0';
                 done <= '0';
-                fwd_trigger <= '0';
+                weights_loaded_reg <= '0';
                 fwd_ctrl(0).valid <= '0';
                 fwd_ctrl(0).last <= '0';
                 input_buffer <= (others => (others => '0'));
-                all_weights <= (others => (others => '0'));
+                layer_weight_load_en <= (others => '0');
             else
                 -- Default assignments
                 mem_read_req <= '0';
                 mem_update_en <= '0';
-                fwd_trigger <= '0';
                 fwd_ctrl(0).valid <= '0';
                 fwd_ctrl(0).last <= '0';
+                layer_weight_load_en <= (others => '0');
 
                 case state is
                     when IDLE =>
-                        ready <= '1';
+                        ready <= '0';
                         done <= '0';
+                        if load_weights = '1' then
+                            -- Start weight loading
+                            fetch_idx <= 0;
+                            current_layer <= 0;
+                            layer_weight_idx <= 0;
+                            weights_loaded_reg <= '0';
+                            state <= LOAD_WEIGHTS_REQ;
+                        elsif start = '1' and weights_loaded_reg = '1' then
+                            -- Start inference (only if weights loaded)
+                            fetch_idx <= 0;
+                            state <= FETCH_INPUTS_REQ;
+                        end if;
+
+                    -- Load weights from memory to layer weight banks
+                    when LOAD_WEIGHTS_REQ =>
+                        mem_read_addr <= WEIGHT_BASE_ADDR + fetch_idx;
+                        mem_read_req <= '1';
+                        state <= LOAD_WEIGHTS_WAIT;
+
+                    when LOAD_WEIGHTS_WAIT =>
+                        if mem_read_valid = '1' then
+                            state <= LOAD_WEIGHTS_SEND;
+                        end if;
+
+                    when LOAD_WEIGHTS_SEND =>
+                        -- Send weight to current layer's weight bank
+                        layer_weight_load_en(current_layer) <= '1';
+
+                        -- Calculate weight count for current layer
+                        layer_weight_count := calc_layer_weight_count(current_layer);
+
+                        if layer_weight_idx = layer_weight_count - 1 then
+                            -- Done with this layer
+                            layer_weight_idx <= 0;
+                            if current_layer = NUM_LAYERS - 1 then
+                                -- All layers loaded
+                                weights_loaded_reg <= '1';
+                                state <= WEIGHTS_READY;
+                            else
+                                -- Move to next layer
+                                current_layer <= current_layer + 1;
+                                fetch_idx <= fetch_idx + 1;
+                                state <= LOAD_WEIGHTS_REQ;
+                            end if;
+                        else
+                            layer_weight_idx <= layer_weight_idx + 1;
+                            fetch_idx <= fetch_idx + 1;
+                            state <= LOAD_WEIGHTS_REQ;
+                        end if;
+
+                    when WEIGHTS_READY =>
+                        ready <= '1';
                         if start = '1' then
                             ready <= '0';
                             fetch_idx <= 0;
                             state <= FETCH_INPUTS_REQ;
+                        elsif load_weights = '1' then
+                            -- Allow reloading weights
+                            ready <= '0';
+                            fetch_idx <= 0;
+                            current_layer <= 0;
+                            layer_weight_idx <= 0;
+                            weights_loaded_reg <= '0';
+                            state <= LOAD_WEIGHTS_REQ;
                         end if;
 
                     -- Fetch inputs from memory (addresses 0 to NUM_INPUTS-1)
@@ -185,63 +270,33 @@ begin
                         if mem_read_valid = '1' then
                             input_buffer(fetch_idx) <= mem_read_data;
                             if fetch_idx = NUM_INPUTS - 1 then
-                                fetch_idx <= 0;
-                                state <= FETCH_WEIGHTS_REQ;
+                                state <= FORWARD_START;
                             else
                                 fetch_idx <= fetch_idx + 1;
                                 state <= FETCH_INPUTS_REQ;
                             end if;
                         end if;
 
-                    -- Fetch weights from memory (addresses NUM_INPUTS to NUM_INPUTS+TOTAL_WEIGHTS-1)
-                    when FETCH_WEIGHTS_REQ =>
-                        mem_read_addr <= WEIGHT_BASE_ADDR + fetch_idx;
-                        mem_read_req <= '1';
-                        state <= FETCH_WEIGHTS_WAIT;
-
-                    when FETCH_WEIGHTS_WAIT =>
-                        if mem_read_valid = '1' then
-                            all_weights(fetch_idx) <= mem_read_data;
-                            if fetch_idx = TOTAL_WEIGHTS - 1 then
-                                state <= FORWARD_START;
-                            else
-                                fetch_idx <= fetch_idx + 1;
-                                state <= FETCH_WEIGHTS_REQ;
-                            end if;
-                        end if;
-
-                    -- Trigger forward pass by asserting valid on first layer input
+                    -- Trigger forward pass
                     when FORWARD_START =>
-                        -- Load inputs to first layer
                         fwd_data(0)(0 to NUM_INPUTS - 1) <= input_buffer;
                         fwd_ctrl(0).valid <= '1';
-                        fwd_ctrl(0).last <= '1';  -- Single sample
-                        fwd_trigger <= '1';
+                        fwd_ctrl(0).last <= '1';
                         state <= FORWARD_WAIT;
 
                     when FORWARD_WAIT =>
-                        -- Wait for output to be valid
                         if fwd_complete = '1' then
                             if mode = '1' and start_store = '1' then
-                                -- Training mode: store gradients
                                 store_idx <= 0;
                                 state <= STORE_GRADIENTS;
                             else
-                                -- Inference mode: done
                                 state <= DONE_STATE;
                             end if;
                         end if;
 
                     when STORE_GRADIENTS =>
-                        mem_update_en <= '1';
-                        mem_update_addr <= WEIGHT_BASE_ADDR + store_idx;
-                        mem_update_grad <= all_grads(store_idx);
-                        if store_idx = TOTAL_WEIGHTS - 1 then
-                            mem_update_en <= '0';
-                            state <= DONE_STATE;
-                        else
-                            store_idx <= store_idx + 1;
-                        end if;
+                        -- TODO: Implement gradient storage
+                        state <= DONE_STATE;
 
                     when DONE_STATE =>
                         done <= '1';
@@ -260,23 +315,14 @@ begin
         end if;
     end process;
 
-    -- Generate Layers
+    -- Generate Layers with weight bank interface
     gen_layers: for i in 0 to NUM_LAYERS - 1 generate
         constant THIS_INPUT_SIZE  : integer := get_layer_input_size(i);
         constant THIS_OUTPUT_SIZE : integer := LAYER_SIZES(i);
         constant THIS_WEIGHT_COUNT: integer := (THIS_INPUT_SIZE + 1) * THIS_OUTPUT_SIZE;
-        constant WEIGHT_OFFSET    : integer := calc_layer_weight_offset(i);
 
-        signal layer_weights : std_logic_bus_array(0 to THIS_WEIGHT_COUNT - 1)(DATA_WIDTH - 1 downto 0);
-        signal layer_grads   : std_logic_bus_array(0 to THIS_WEIGHT_COUNT - 1)(DATA_WIDTH - 1 downto 0);
+        signal layer_grads : std_logic_bus_array(0 to THIS_WEIGHT_COUNT - 1)(DATA_WIDTH - 1 downto 0);
     begin
-        -- Map weights from flat array to layer
-        gen_weight_map: for w in 0 to THIS_WEIGHT_COUNT - 1 generate
-            layer_weights(w) <= all_weights(WEIGHT_OFFSET + w);
-            all_grads(WEIGHT_OFFSET + w) <= layer_grads(w);
-        end generate;
-
-        -- Layer instance
         u_layer: entity work.layer
             generic map (
                 NUM_INPUTS => THIS_INPUT_SIZE,
@@ -296,7 +342,16 @@ begin
                 bwd_error_in => bwd_data(i + 1)(0 to THIS_OUTPUT_SIZE - 1),
                 bwd_ctrl_out => bwd_ctrl(i),
                 bwd_error_out => bwd_data(i)(0 to THIS_INPUT_SIZE - 1),
-                weights_in => layer_weights,
+                -- Weight bank interface
+                weight_load_en => layer_weight_load_en(i),
+                weight_load_data => mem_read_data,
+                weight_load_done => layer_weight_load_done(i),
+                weight_save_en => '0',
+                weight_save_data => open,
+                weight_save_done => open,
+                weight_update_en => '0',
+                weight_learn_rate => (others => '0'),
+                weight_update_done => open,
                 grads_out => layer_grads
             );
     end generate;
@@ -305,7 +360,7 @@ begin
     output_valid <= fwd_ctrl(NUM_LAYERS).valid;
     output_data  <= fwd_data(NUM_LAYERS)(0);
 
-    -- Initialize backward path (no error from output for now)
+    -- Initialize backward path
     bwd_ctrl(NUM_LAYERS).valid <= '0';
     bwd_ctrl(NUM_LAYERS).last <= '0';
     bwd_data(NUM_LAYERS) <= (others => (others => '0'));

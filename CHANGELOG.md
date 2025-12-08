@@ -1,6 +1,52 @@
 # Changelog
 
-## [2025-12-08] - YAML Configuration System
+## [2025-06-08] - Weight Bank Implementation (Phase 1)
+
+### Added
+- **Weight Bank Entity** (`src/weight_bank.vhd`)
+  - Stores weights in registers for fast parallel access during inference
+  - Sequential loading from memory (one weight per clock)
+  - Parallel read access to all weights for compute units
+  - Gradient update interface for training (w = w - lr * grad)
+  - Save interface for checkpointing weights to memory
+
+- **Decoupled weight loading from inference**
+  - `load_weights` signal triggers one-time weight loading from memory
+  - `weights_loaded` status indicates weight banks are ready
+  - Inference only fetches inputs, uses pre-loaded weights
+  - Multiple inferences can run without reloading weights
+
+### Changed
+- **Layer Entity** (`src/layer.vhd`)
+  - Now contains internal weight bank instead of external weight input
+  - New ports: `weight_load_en`, `weight_load_data`, `weight_load_done`
+  - New ports: `weight_save_en`, `weight_save_data`, `weight_save_done`
+  - New ports: `weight_update_en`, `weight_learn_rate`, `weight_update_done`
+
+- **Calculation Unit** (`src/calculation_unit.vhd`)
+  - New `load_weights` input to trigger weight loading
+  - New `weights_loaded` output status
+  - State machine refactored: separate states for weight loading and inference
+  - Weight loading iterates through layers, sending weights sequentially
+
+- **Neural Network** (`src/neural_network.vhd`)
+  - New `load_weights` input port
+  - New `weights_loaded` output port
+
+- **XOR Testbench** (`testbench/xor_tb.vhd`)
+  - Updated to use new weight loading flow
+  - Loads weights to memory, triggers `load_weights`, waits for `weights_loaded`
+
+- **Layer Testbench Generator** (`scripts/gen_testbenches.py`)
+  - Updated to generate testbenches compatible with new weight bank interface
+
+### Performance
+- Inference time reduced from ~9000ns to ~2500ns per sample (XOR test)
+- Weights loaded once (~8000ns), then reused for all inferences
+
+---
+
+## [2025-06-08] - YAML Configuration System
 
 ### Added
 - **YAML-based configuration system** for neural network parameters

@@ -20,8 +20,10 @@ architecture testbench of xor_tb is
     -- Signals
     signal clk : std_logic := '0';
     signal rst : std_logic := '0';
+    signal load_weights : std_logic := '0';
     signal start : std_logic := '0';
     signal train_mode : std_logic := '0';
+    signal weights_loaded : std_logic;
     signal ready : std_logic;
     signal done : std_logic;
 
@@ -68,8 +70,10 @@ begin
         port map (
             clk => clk,
             rst => rst,
+            load_weights => load_weights,
             start => start,
             train_mode => train_mode,
+            weights_loaded => weights_loaded,
             ready => ready,
             done => done,
             host_write_en => host_write_en,
@@ -150,7 +154,16 @@ begin
         -- N0 (AND-like): w=[10, 10, 0], b=-15
         write_mem(11, 10.0); write_mem(12, 10.0); write_mem(13, 0.0); write_mem(14, -15.0);
 
-        report "Weights Loaded. Starting Inference Tests...";
+        report "Weights Loaded. Triggering Weight Load...";
+
+        -- Trigger weight loading from memory to weight banks
+        load_weights <= '1';
+        wait until rising_edge(clk);
+        load_weights <= '0';
+
+        -- Wait for weights to be loaded
+        wait until weights_loaded = '1';
+        report "Weight Banks Ready. Starting Inference Tests...";
 
         run_inference(0.0, 0.0, 0.0); -- 0 XOR 0 = 0
         run_inference(0.0, 1.0, 1.0); -- 0 XOR 1 = 1

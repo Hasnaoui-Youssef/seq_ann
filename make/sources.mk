@@ -8,6 +8,7 @@ FILES = src/types.vhd \
         src/full_adder.vhd \
         src/n_bit_adder.vhd \
         src/acc.vhd \
+        src/weight_bank.vhd \
         src/neuron.vhd \
         src/layer.vhd \
         src/bram.vhd \

@@ -449,11 +449,6 @@ def generate_layer_tb(sigmoid_config: YamlSigmoidConfig, int_bits: int, frac_bit
             sum_val += inputs_1[j] * weights_flat[base + j]
         expected_1.append(sigmoid_activation(sum_val))
 
-    # Generate weight initialization code
-    weight_init_code = ""
-    for i, w in enumerate(weights_flat):
-        weight_init_code += f"        weights_s({i}) <= to_slv(to_sfixed({w}, INT_BITS - 1, -FRAC_BITS));\n"
-
     # Generate input initialization code
     input_init_code = ""
     for i, inp in enumerate(inputs_1):
@@ -497,9 +492,23 @@ architecture testbench of layer_tb is
     signal bwd_error_in : std_logic_bus_array(0 to NUM_OUTPUTS - 1)(DATA_WIDTH - 1 downto 0) := (others => (others => '0'));
     signal bwd_error_out : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
 
-    -- Weights
-    signal weights_s : std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0) := (others => (others => '0'));
+    -- Weight Bank Interface
+    signal weight_load_en : std_logic := '0';
+    signal weight_load_data : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal weight_load_done : std_logic;
+    signal weight_save_en : std_logic := '0';
+    signal weight_save_data : std_logic_vector(DATA_WIDTH - 1 downto 0);
+    signal weight_save_done : std_logic;
+    signal weight_update_en : std_logic := '0';
+    signal weight_learn_rate : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal weight_update_done : std_logic;
+
+    -- Gradients
     signal grads_s : std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
+
+    -- Weight values to load
+    type weight_array_t is array (0 to NUM_WEIGHTS - 1) of real;
+    constant WEIGHTS : weight_array_t := ({', '.join([str(w) for w in weights_flat])});
 
 begin
     -- Clock generation
@@ -531,7 +540,15 @@ begin
             bwd_error_in => bwd_error_in,
             bwd_ctrl_out => bwd_ctrl_out,
             bwd_error_out => bwd_error_out,
-            weights_in => weights_s,
+            weight_load_en => weight_load_en,
+            weight_load_data => weight_load_data,
+            weight_load_done => weight_load_done,
+            weight_save_en => weight_save_en,
+            weight_save_data => weight_save_data,
+            weight_save_done => weight_save_done,
+            weight_update_en => weight_update_en,
+            weight_learn_rate => weight_learn_rate,
+            weight_update_done => weight_update_done,
             grads_out => grads_s
         );
 
@@ -551,9 +568,17 @@ begin
         rst <= '0';
         wait for CLK_PERIOD;
 
-        -- Initialize weights
-        report "Setting weights...";
-{weight_init_code}
+        -- Load weights sequentially into weight bank
+        report "Loading weights into weight bank...";
+        for i in 0 to NUM_WEIGHTS - 1 loop
+            weight_load_data <= to_slv(to_sfixed(WEIGHTS(i), INT_BITS - 1, -FRAC_BITS));
+            weight_load_en <= '1';
+            wait until rising_edge(clk);
+            weight_load_en <= '0';
+            wait until rising_edge(clk);
+        end loop;
+        report "Weights loaded.";
+
         -- Set inputs
         report "Setting inputs...";
 {input_init_code}
