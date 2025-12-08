@@ -2,6 +2,7 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 use IEEE.fixed_pkg.all;
+use IEEE.fixed_float_types.all;
 use work.types.all;
 use work.sigmoid_lut_pkg.all;
 
