@@ -164,7 +164,8 @@ begin
 
                 -- Derivative: y * (1 - y) for sigmoid, 1.0 for linear
                 if USE_SIGMOID then
-                    stored_deriv <= calc_sigmoid_deriv(stored_output_reg);
+                    -- Use the current activation output (act_out_sig) for derivative calculation
+                    stored_deriv <= calc_sigmoid_deriv(to_std_logic_vector(act_out_sig));
                 else
                     -- For non-sigmoid (linear), derivative is 1.0
                     stored_deriv <= to_std_logic_vector(to_sfixed(1.0, INT_BITS - 1, -FRAC_BITS));
