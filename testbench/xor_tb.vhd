@@ -9,6 +9,9 @@ end entity xor_tb;
 
 architecture testbench of xor_tb is
     -- Configuration
+    -- NOTE: The clock period is set to 100 ns (10x slower than typical 10 ns)
+    -- to accommodate longer combinational paths through multi-layer network
+    -- and improve simulation visibility for debugging purposes.
     constant CLK_PERIOD : time := 100 ns;
     constant TOLERANCE_C : real := 0.1;
 

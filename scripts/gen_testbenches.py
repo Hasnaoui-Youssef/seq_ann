@@ -16,10 +16,6 @@ def sigmoid(x: float) -> float:
     """Compute sigmoid function."""
     return 1.0 / (1.0 + math.exp(-x))
 
-def get_sfixed_range(config):
-    """Get sfixed range using INT_BITS and FRAC_BITS from config"""
-    return config.int_bits - 1, -config.frac_bits
-
 def generate_activation_func_tb(sigmoid_config: YamlSigmoidConfig, int_bits: int, frac_bits: int, 
                                 num_test_inputs: int, output_file: str = "testbench/activation_func_tb.vhd"):
     """Generate VHDL testbench for sigmoid activation function"""

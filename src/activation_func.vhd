@@ -13,7 +13,7 @@ entity activation_func is
     );
     port(
         input_i : in std_logic_vector(input_width - 1 downto 0);
-        output_o : out sfixed_bus := (others => '0')  -- Output is always DATA_WIDTH
+        output_o : out sfixed_bus  -- Output is always DATA_WIDTH (INT_BITS and FRAC_BITS)
     );
 end entity activation_func;
 

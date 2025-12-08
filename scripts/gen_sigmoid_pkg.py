@@ -41,7 +41,7 @@ def float_to_fixed_bin(value: float, int_bits: int, frac_bits: int) -> str:
     """Convert float to fixed-point binary string for VHDL."""
     total_bits = int_bits + frac_bits
     scale = 2 ** frac_bits
-    fixed_val = int(round(value * scale))
+    fixed_val = round(value * scale)
     
     # Handle negative values (two's complement)
     if fixed_val < 0:
@@ -92,7 +92,7 @@ package sigmoid_lut_pkg is
 
     constant SIGMOID_LUT : sigmoid_lut_type := (
 """
-    for i, (idx, x, sig_val) in enumerate(lut):
+    for i, (_idx, _x, sig_val) in enumerate(lut):
         bin_val = float_to_fixed_bin(sig_val, int_bits, frac_bits)
         comma = "" if i == len(lut) - 1 else ","
         vhdl_code += f"        {i} => {bin_val}{comma}\n"

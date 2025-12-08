@@ -1,0 +1,5 @@
+#!/bin/bash
+# Wrapper script to run GHDL in Docker container
+# This allows running GHDL without installing it locally
+
+exec docker run --rm -v "$(pwd):/work" -w /work hdlc/ghdl:yosys ghdl "$@"
