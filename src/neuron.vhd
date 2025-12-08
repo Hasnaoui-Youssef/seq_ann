@@ -52,6 +52,9 @@ architecture rtl of neuron is
 
     -- Accumulator output
     signal acc_sum : std_logic_vector(ACC_OUT_WIDTH - 1 downto 0);
+    -- Note: acc_overflow is intentionally not used in this design.
+    -- The accumulator is sized (ACC_SIZE + DATA_WIDTH bits) to prevent overflow
+    -- for the expected range of inputs, so overflow handling is not required.
     signal acc_overflow : std_logic;
 
     -- Activation function output
@@ -147,12 +150,25 @@ begin
                     stored_output_reg <= to_std_logic_vector(act_out_sig);
                 else
                     -- For non-sigmoid, resize accumulator output to DATA_WIDTH
-                    stored_output_reg <= acc_sum(DATA_WIDTH - 1 downto 0);
+                    -- Use saturating resize to handle potential overflow gracefully
+                    stored_output_reg <= to_std_logic_vector(
+                        resize(
+                            to_sfixed(acc_sum, ACC_OUT_WIDTH-1, -FRAC_BITS),
+                            INT_BITS - 1,
+                            -FRAC_BITS,
+                            fixed_saturate,
+                            fixed_truncate
+                        )
+                    );
                 end if;
 
-                -- Derivative: y * (1 - y)
-                -- For now, set deriv to 1.0 (simplified)
-                stored_deriv <= to_std_logic_vector(to_sfixed(1.0, INT_BITS - 1, -FRAC_BITS));
+                -- Derivative: y * (1 - y) for sigmoid, 1.0 for linear
+                if USE_SIGMOID then
+                    stored_deriv <= calc_sigmoid_deriv(stored_output_reg);
+                else
+                    -- For non-sigmoid (linear), derivative is 1.0
+                    stored_deriv <= to_std_logic_vector(to_sfixed(1.0, INT_BITS - 1, -FRAC_BITS));
+                end if;
             end if;
 
             -- Backward Pass
