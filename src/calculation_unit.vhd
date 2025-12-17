@@ -79,10 +79,13 @@ architecture rtl of calculation_unit is
     type ctrl_array_t is array (0 to NUM_LAYERS) of layer_control_t;
     type data_array_t is array (0 to NUM_LAYERS) of std_logic_bus_array(0 to MAX_SIZE - 1)(DATA_WIDTH - 1 downto 0);
 
-    signal fwd_ctrl : ctrl_array_t;
-    signal fwd_data : data_array_t;
-    signal bwd_ctrl : ctrl_array_t;
-    signal bwd_data : data_array_t;
+    constant CTRL_INIT : layer_control_t := (valid => '0', last => '0');
+    constant DATA_INIT : std_logic_bus_array(0 to MAX_SIZE - 1)(DATA_WIDTH - 1 downto 0) := (others => (others => '0'));
+
+    signal fwd_ctrl : ctrl_array_t := (others => CTRL_INIT);
+    signal fwd_data : data_array_t := (others => DATA_INIT);
+    signal bwd_ctrl : ctrl_array_t := (others => CTRL_INIT);
+    signal bwd_data : data_array_t := (others => DATA_INIT);
 
     -- Input storage (fetched from memory)
     signal input_buffer : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
@@ -95,8 +98,7 @@ architecture rtl of calculation_unit is
     type state_t is (
         IDLE,                   -- Ready for commands
         LOAD_WEIGHTS_REQ,       -- Request weight from memory
-        LOAD_WEIGHTS_WAIT,      -- Wait for weight data
-        LOAD_WEIGHTS_SEND,      -- Send weight to layer
+        LOAD_WEIGHTS_WAIT,      -- Wait for weight data and send to weight bank
         WEIGHTS_READY,          -- Weights loaded, ready for inference
         FETCH_INPUTS_REQ,       -- Request input from memory
         FETCH_INPUTS_WAIT,      -- Wait for input data
@@ -119,6 +121,10 @@ architecture rtl of calculation_unit is
     -- Forward pass control
     signal fwd_complete : std_logic := '0';
 
+    -- Output latching (persist output after inference completes)
+    signal output_data_reg : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal output_valid_reg : std_logic := '0';
+
 begin
 
     -- Forward pass completion detection
@@ -126,6 +132,16 @@ begin
 
     -- Status outputs
     weights_loaded <= weights_loaded_reg;
+
+    -- Combinatorial weight load enable - active when in LOAD_WEIGHTS_WAIT and data is valid
+    -- This ensures weight bank sees load_en in the same cycle as valid data
+    process(state, mem_read_valid, current_layer)
+    begin
+        layer_weight_load_en <= (others => '0');
+        if state = LOAD_WEIGHTS_WAIT and mem_read_valid = '1' then
+            layer_weight_load_en(current_layer) <= '1';
+        end if;
+    end process;
 
     -- Main State Machine
     process(clk)
@@ -149,14 +165,14 @@ begin
                 fwd_ctrl(0).valid <= '0';
                 fwd_ctrl(0).last <= '0';
                 input_buffer <= (others => (others => '0'));
-                layer_weight_load_en <= (others => '0');
+                output_data_reg <= (others => '0');
+                output_valid_reg <= '0';
             else
                 -- Default assignments
                 mem_read_req <= '0';
                 mem_update_en <= '0';
                 fwd_ctrl(0).valid <= '0';
                 fwd_ctrl(0).last <= '0';
-                layer_weight_load_en <= (others => '0');
 
                 case state is
                     when IDLE =>
@@ -183,42 +199,38 @@ begin
 
                     when LOAD_WEIGHTS_WAIT =>
                         if mem_read_valid = '1' then
-                            state <= LOAD_WEIGHTS_SEND;
-                        end if;
-
-                    when LOAD_WEIGHTS_SEND =>
-                        -- Send weight to current layer's weight bank
-                        layer_weight_load_en(current_layer) <= '1';
-
-                        if current_layer = 0 then
-                            layer_weight_count := (NUM_INPUTS + 1) * LAYER_SIZES(0);
-                        else
-                            layer_weight_count := (LAYER_SIZES(current_layer - 1) + 1) * LAYER_SIZES(current_layer);
-                        end if;
-
-                        if layer_weight_idx = layer_weight_count - 1 then
-                            -- Done with this layer
-                            layer_weight_idx <= 0;
-                            if current_layer = NUM_LAYERS - 1 then
-                                -- All layers loaded
-                                weights_loaded_reg <= '1';
-                                state <= WEIGHTS_READY;
+                            -- Weight load enable is handled combinatorially
+                            if current_layer = 0 then
+                                layer_weight_count := (NUM_INPUTS + 1) * LAYER_SIZES(0);
                             else
-                                -- Move to next layer
-                                current_layer <= current_layer + 1;
+                                layer_weight_count := (LAYER_SIZES(current_layer - 1) + 1) * LAYER_SIZES(current_layer);
+                            end if;
+
+                            if layer_weight_idx = layer_weight_count - 1 then
+                                -- Done with this layer
+                                layer_weight_idx <= 0;
+                                if current_layer = NUM_LAYERS - 1 then
+                                    -- All layers loaded
+                                    weights_loaded_reg <= '1';
+                                    state <= WEIGHTS_READY;
+                                else
+                                    -- Move to next layer
+                                    current_layer <= current_layer + 1;
+                                    fetch_idx <= fetch_idx + 1;
+                                    state <= LOAD_WEIGHTS_REQ;
+                                end if;
+                            else
+                                layer_weight_idx <= layer_weight_idx + 1;
                                 fetch_idx <= fetch_idx + 1;
                                 state <= LOAD_WEIGHTS_REQ;
                             end if;
-                        else
-                            layer_weight_idx <= layer_weight_idx + 1;
-                            fetch_idx <= fetch_idx + 1;
-                            state <= LOAD_WEIGHTS_REQ;
                         end if;
 
                     when WEIGHTS_READY =>
                         ready <= '1';
                         if start = '1' then
                             ready <= '0';
+                            done <= '0';  -- Clear done when starting new inference
                             fetch_idx <= 0;
                             state <= FETCH_INPUTS_REQ;
                         elsif load_weights = '1' then
@@ -257,6 +269,9 @@ begin
 
                     when FORWARD_WAIT =>
                         if fwd_complete = '1' then
+                            -- Latch output when forward pass completes
+                            output_data_reg <= fwd_data(NUM_LAYERS)(0);
+                            output_valid_reg <= '1';
                             if mode = '1' and start_store = '1' then
                                 store_idx <= 0;
                                 state <= STORE_GRADIENTS;
@@ -271,13 +286,8 @@ begin
 
                     when DONE_STATE =>
                         done <= '1';
-                        ready <= '1';
-                        if start = '1' then
-                            done <= '0';
-                            ready <= '0';
-                            fetch_idx <= 0;
-                            state <= FETCH_INPUTS_REQ;
-                        end if;
+                        ready <= '0';
+                        state <= WEIGHTS_READY;
 
                     when others =>
                         state <= IDLE;
@@ -327,9 +337,9 @@ begin
             );
     end generate;
 
-    -- Output from last layer
-    output_valid <= fwd_ctrl(NUM_LAYERS).valid;
-    output_data  <= fwd_data(NUM_LAYERS)(0);
+    -- Output from latched registers (persist after inference completes)
+    output_valid <= output_valid_reg;
+    output_data  <= output_data_reg;
 
     -- Initialize backward path
     bwd_ctrl(NUM_LAYERS).valid <= '0';

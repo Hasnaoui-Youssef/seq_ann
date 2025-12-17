@@ -1,5 +1,22 @@
 # Changelog
 
+## [2025-12-17] - Forward Pass State Machine Fixes
+
+### Fixed
+- **Inference state machine bug**: `done` signal wasn't cleared when starting new inference, causing testbench `wait until done='1'` to complete immediately
+- **Weight loading timing**: Made `layer_weight_load_en` combinatorial so weight bank receives `load_en` in the same cycle as valid `mem_read_data`
+- **Output latching**: Added `output_data_reg` and `output_valid_reg` to persist output after inference completes
+
+### Changed
+- calculation_unit: Removed unused `LOAD_WEIGHTS_SEND` state, combined logic into `LOAD_WEIGHTS_WAIT`
+- calculation_unit: `done` signal now properly cleared when `start` triggers new inference from `WEIGHTS_READY` state
+
+### Notes
+- XOR testbench now correctly runs all 4 test cases with proper timing
+- All tests pass: activation_func_tb, neuron_tb, layer_tb, xor_tb
+
+---
+
 ## [2025-12-17] - Metavalue Warning Fixes
 
 ### Fixed
