@@ -1,5 +1,19 @@
 # Changelog
 
+## [2025-12-17] - Metavalue Warning Fixes
+
+### Fixed
+- BRAM: Initialize RAM contents to zeros and use registered outputs
+- calculation_unit: Initialize `mem_read_addr`, `mem_update_addr`, `mem_update_grad` on reset
+- neuron: Initialize `grad_weights_o`, `grad_inputs_o`, and `stored_inputs` on reset
+- memory_control_unit: Address signals already had proper initialization
+
+### Notes
+- Remaining warnings at `@0ms` are unavoidable (combinational logic before first clock)
+- Warnings at `@12550ns` during first inference are benign (sigmoid LUT indexing during signal transition)
+
+---
+
 ## [2025-06-08] - Weight Bank Implementation (Phase 1)
 
 ### Added

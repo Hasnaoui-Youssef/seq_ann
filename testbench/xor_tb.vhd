@@ -67,8 +67,7 @@ begin
         generic map (
             NUM_INPUTS  => NUM_INPUTS,
             NUM_LAYERS  => NUM_LAYERS,
-            LAYER_SIZES => LAYER_SIZES,
-            MEMORY_SIZE => 1024
+            LAYER_SIZES => LAYER_SIZES
         )
         port map (
             clk => clk,

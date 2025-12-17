@@ -47,40 +47,6 @@ end entity calculation_unit;
 
 architecture rtl of calculation_unit is
 
-    -- Calculate total weights needed for all layers
-    function calc_total_weights return integer is
-        variable total : integer := 0;
-        variable prev_size : integer := NUM_INPUTS;
-    begin
-        for i in LAYER_SIZES'range loop
-            total := total + (prev_size + 1) * LAYER_SIZES(i);
-            prev_size := LAYER_SIZES(i);
-        end loop;
-        return total;
-    end function;
-
-    -- Calculate weight count for a specific layer
-    function calc_layer_weight_count(layer_idx : integer) return integer is
-        variable prev_size : integer := NUM_INPUTS;
-    begin
-        for i in 0 to layer_idx - 1 loop
-            prev_size := LAYER_SIZES(i);
-        end loop;
-        return (prev_size + 1) * LAYER_SIZES(layer_idx);
-    end function;
-
-    -- Calculate weight offset for a specific layer
-    function calc_layer_weight_offset(layer_idx : integer) return integer is
-        variable offset : integer := 0;
-        variable prev_size : integer := NUM_INPUTS;
-    begin
-        for i in 0 to layer_idx - 1 loop
-            offset := offset + (prev_size + 1) * LAYER_SIZES(i);
-            prev_size := LAYER_SIZES(i);
-        end loop;
-        return offset;
-    end function;
-
     -- Get input size for a layer
     function get_layer_input_size(layer_idx : integer) return integer is
     begin
@@ -104,7 +70,6 @@ architecture rtl of calculation_unit is
     end function;
 
     -- Constants
-    constant TOTAL_WEIGHTS : integer := calc_total_weights;
     constant MAX_SIZE      : integer := max_layer_size;
 
     -- Memory layout: inputs at 0..NUM_INPUTS-1, weights at NUM_INPUTS..NUM_INPUTS+TOTAL_WEIGHTS-1
@@ -170,7 +135,10 @@ begin
             if rst = '1' then
                 state <= IDLE;
                 mem_read_req <= '0';
+                mem_read_addr <= 0;
                 mem_update_en <= '0';
+                mem_update_addr <= 0;
+                mem_update_grad <= (others => '0');
                 fetch_idx <= 0;
                 store_idx <= 0;
                 current_layer <= 0;
@@ -222,8 +190,11 @@ begin
                         -- Send weight to current layer's weight bank
                         layer_weight_load_en(current_layer) <= '1';
 
-                        -- Calculate weight count for current layer
-                        layer_weight_count := calc_layer_weight_count(current_layer);
+                        if current_layer = 0 then
+                            layer_weight_count := (NUM_INPUTS + 1) * LAYER_SIZES(0);
+                        else
+                            layer_weight_count := (LAYER_SIZES(current_layer - 1) + 1) * LAYER_SIZES(current_layer);
+                        end if;
 
                         if layer_weight_idx = layer_weight_count - 1 then
                             -- Done with this layer

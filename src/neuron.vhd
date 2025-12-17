@@ -138,6 +138,9 @@ begin
             stored_output_reg <= (others => '0');
             stored_deriv <= (others => '0');
             grad_bias_o <= (others => '0');
+            grad_weights_o <= (others => (others => '0'));
+            grad_inputs_o <= (others => (others => '0'));
+            stored_inputs <= (others => (others => '0'));
 
         elsif rising_edge(clk) then
 

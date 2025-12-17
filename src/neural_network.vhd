@@ -8,8 +8,7 @@ entity neural_network is
     generic(
         NUM_INPUTS  : integer := 2;
         NUM_LAYERS  : integer := 2;
-        LAYER_SIZES : layer_config_array;  -- e.g., (3, 1) for hidden=3, output=1
-        MEMORY_SIZE : integer := 1024
+        LAYER_SIZES : layer_config_array  -- e.g., (3, 1) for hidden=3, output=1
     );
     port (
         clk : in std_logic;
@@ -19,7 +18,7 @@ entity neural_network is
         load_weights : in std_logic;   -- Trigger weight loading from memory
         start        : in std_logic;   -- Start inference (weights must be loaded)
         train_mode   : in std_logic;
-        
+
         -- Status
         weights_loaded : out std_logic;  -- Weights are loaded
         ready          : out std_logic;

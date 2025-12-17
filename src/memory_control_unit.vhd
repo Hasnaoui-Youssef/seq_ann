@@ -7,7 +7,6 @@ use work.pkg_layer.all;
 
 entity memory_control_unit is
     generic (
-        MEMORY_SIZE : integer := 1024;
         ADDR_WIDTH  : integer := 10
     );
     port (
@@ -37,9 +36,9 @@ architecture rtl of memory_control_unit is
 
     -- BRAM Signals
     signal bram_wea : std_logic;
-    signal bram_addra : std_logic_vector(ADDR_WIDTH - 1 downto 0);
+    signal bram_addra : std_logic_vector(ADDR_WIDTH - 1 downto 0) := (others => '0');
     signal bram_dia : std_logic_vector(DATA_WIDTH - 1 downto 0);
-    signal bram_addrb : std_logic_vector(ADDR_WIDTH - 1 downto 0);
+    signal bram_addrb : std_logic_vector(ADDR_WIDTH - 1 downto 0) := (others => '0');
     signal bram_dob : std_logic_vector(DATA_WIDTH - 1 downto 0);
 
     -- Pipeline Signals for Update (Read-Modify-Write)
