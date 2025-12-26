@@ -13,10 +13,10 @@ This document outlines the key design principles and guidelines for assisting wi
 - **Type conversion convention**: When converting `std_logic_vector` to `sfixed`:
   - The lower N bits (where N = number of fractional bits) are interpreted as the fractional part
   - No additional scaling or shifting is applied during conversion
-- **Entity usage**: We are aiming to create a modular project, therefore:
-  - If we are going to use a logic block, we first check whether a component doing that already exists.
-  - We try to maintain a clear separation of concerns; for example, a neuron will always contain an accumulator and an activation function.
-  - If things are broken within a component, we fix that or, if necessary, create a new architecture to accommodate a different use case. Architecture creation should be a last resort, and you should prompt me before doing so, explaining in as much detail as possible what is wrong with the current one and why fixing it alone will not work.
+- **Entity usage** We are aiming to create a modular project, therefore:
+  - If we are going to use a logic block, we first check if a component doing that already exists.
+  - We try and make a separation of concers, for example, a neuron will always contain an accumulator and an activation function.
+  - If things are broken within a component, we fix that, or we create a new architecture to accomodate for our different use case, but architecture creation should be a last resort and you are to prompt me if doing so explaining in as much details as possible what's wrong with the current one and why fixing it alone won't work.
 
 ### Implementation Notes
 - Maintain fractional bit alignment throughout arithmetic operations
@@ -25,7 +25,7 @@ This document outlines the key design principles and guidelines for assisting wi
 
 ## Testing and Simulation
 
-## Testbench Output Management
+### Testbench Output Management
 - **All simulation reports must be saved to log files**
 - **Create a dedicated `log/` folder** for storing all test outputs
 - Capture and redirect VHDL `report` statements to organized log files
@@ -78,9 +78,6 @@ Layer:              [Capture Input] → [Process]
 
 ## Code Generation Scripts (Python)
 
-The purpose of the code generation scripts is to allow the user to describe a neural network via a a YAML configuration file(examples found in the config directory), these scripts will be used for 2 main purposes:
-- **Generating base elements** such as lookup tables and setting constants for use throughout the project such as the data width and number of fractional bits per value.
-- **Generating top level elements** such as testbenches or neural network architecture based on the defined components, which will not be automatically generated, for example, generating a neural network that uses a convolution layer when it is not implemented yet should be flagged to the user.
 When generating VHDL components via Python scripts:
 - **Lookup tables** (sigmoid, tanh) should be generated with proper fixed-point scaling
 - **Testbenches** should automatically include log file generation
@@ -89,15 +86,15 @@ When generating VHDL components via Python scripts:
   - Fixed-point representation
   - Clock domain information
   - Any assumptions made during generation
-- **Neural Network generation** should be aware of the currently available elements within the project, a configuration file might be valid but not yet implemented, through the structure of the project, we will define how to deduce available features.
 
 ## General Best Practices
 
-- Always specify bit widths based on the specified constants within the "types.vhd" file
+- Always specify bit widths explicitly
 - Use descriptive signal names that indicate their clock domain
 - Comment complex fixed-point conversions
 - Document the latency of each pipeline stage
 - Verify timing closure for critical paths
+- Consider synthesis constraints early in design
 
 ---
 

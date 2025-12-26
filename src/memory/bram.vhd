@@ -25,13 +25,35 @@ end bram;
 
 architecture syn of bram is
 type ram_type is array (2**ADDR_WIDTH - 1 downto 0) of std_logic_vector(DATA_WIDTH - 1 downto 0);
-shared variable RAM : ram_type;
+shared variable RAM : ram_type := (others => (others => '0'));
+
+-- synthesis translate_off
+signal ram_debug : ram_type := (others => (others => '0'));
+-- synthesis translate_on
+
+-- Initialize outputs to avoid metavalues
+signal doa_reg : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
+signal dob_reg : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
+
 begin
+
+DOA <= doa_reg;
+DOB <= dob_reg;
+
+-- synthesis translate_off
+process(CLKA)
+    begin
+        if rising_edge(CLKA) then
+            ram_debug <= RAM;
+        end if;
+end process;
+-- synthesis translate_on
+
 process(CLKA)
     begin
     if CLKA'event and CLKA = '1' then
         if ENA = '1' then
-            DOA <= RAM(to_integer(unsigned(ADDRA)));
+            doa_reg <= RAM(to_integer(unsigned(ADDRA)));
             if WEA = '1' then
                 RAM(to_integer(unsigned(ADDRA))) := DIA;
             end if;
@@ -43,7 +65,7 @@ process(CLKB)
     begin
     if CLKB'event and CLKB = '1' then
         if ENB = '1' then
-            DOB <= RAM(to_integer(unsigned(ADDRB)));
+            dob_reg <= RAM(to_integer(unsigned(ADDRB)));
             if WEB = '1' then
                 RAM(to_integer(unsigned(ADDRB))) := DIB;
             end if;

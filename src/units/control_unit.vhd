@@ -32,11 +32,11 @@ architecture rtl of control_unit is
     signal state : state_t := IDLE;
 
     constant DEFAULT_LR : std_logic_vector(DATA_WIDTH - 1 downto 0) := x"00001999"; -- 0.1 in 16.16 fixed point (approx)
-    
+
     -- Training Loop Counters (Hardcoded for now, should be configurable)
     constant MAX_EPOCHS : integer := 10;
     constant SAMPLES_PER_EPOCH : integer := 4; -- XOR has 4 samples
-    
+
     signal epoch_counter : integer := 0;
     signal sample_counter : integer := 0;
 
@@ -54,10 +54,7 @@ begin
             calc_start <= '0';
             calc_store <= '0';
         elsif rising_edge(clk) then
-            report "Control Unit Debug: state=" & state_t'image(state) & 
-                   " calc_done=" & std_logic'image(calc_done) & 
-                   " done=" & std_logic'image(done);
-                   
+
             case state is
                 when IDLE =>
                     if calc_ready = '1' then
@@ -65,17 +62,16 @@ begin
                     else
                         ready <= '0';
                     end if;
-                    
+
                     done <= '0';
                     if start = '1' then
                         ready <= '0';
                         if train_mode = '1' then
-                            -- Start Training Loop
                             state <= TRAIN_EPOCH_START;
                             epoch_counter <= 0;
                         else
                             state <= PREDICT_FWD;
-                            calc_mode <= '0'; -- Forward
+                            calc_mode <= '0';
                             calc_start <= '1';
                         end if;
                     end if;
@@ -124,13 +120,17 @@ begin
                     end if;
 
                 when PREDICT_FWD =>
-                    calc_start <= '0';
-                    if calc_done = '1' then
+                    -- After first cycle, clear calc_start
+                    -- Only check calc_done after calc_start is cleared (calc has started)
+                    if calc_start = '1' then
+                        calc_start <= '0';
+                    elsif calc_done = '1' then
                         state <= FINISHED;
                     end if;
 
                 when FINISHED =>
                     done <= '1';
+                    -- Wait for start to deassert before going to IDLE
                     if start = '0' then
                         state <= IDLE;
                     end if;

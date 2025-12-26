@@ -10,70 +10,45 @@ entity activation_func_tb is
 end entity activation_func_tb;
 
 architecture testbench of activation_func_tb is
-    -- Component declaration
-    component activation_func is
-        generic(
-            input_width : integer := 32;
-            input_frac_width : integer := 16;
-            output_width : integer := 32
-        );
-        port(
-            input_i : in std_logic_vector(input_width - 1 downto 0);
-            output_o : out sfixed((output_width + 1) / 2 - 1 downto - (output_width / 2))
-        );
-    end component;
-
     -- Test signals
-    signal input_s : std_logic_vector(32 - 1 downto 0);
-    signal output_s : sfixed(15 downto -16);
+    signal input_s : std_logic_vector(DATA_WIDTH - 1 downto 0);
+    signal output_s : sfixed_bus;
 
     -- Helper signals
-    signal input_sfixed : sfixed(15 downto -16);
+    signal input_sfixed : sfixed_bus;
     signal input_real : real;
     signal output_real : real;
 
     -- Test configuration
-    constant NUM_TESTS : integer := 16;
+    constant NUM_TESTS : integer := 10;
     type real_array is array (0 to NUM_TESTS - 1) of real;
 
     -- Test vectors: input values
     constant TEST_INPUTS : real_array := (
         0 => -8.000000,
-        1 => -6.933333,
-        2 => -5.866667,
-        3 => -4.800000,
-        4 => -3.733333,
-        5 => -2.666667,
-        6 => -1.600000,
-        7 => -0.533333,
-        8 => 0.533333,
-        9 => 1.600000,
-        10 => 2.666667,
-        11 => 3.733333,
-        12 => 4.800000,
-        13 => 5.866667,
-        14 => 6.933333,
-        15 => 8.000000
+        1 => -6.222222,
+        2 => -4.444444,
+        3 => -2.666667,
+        4 => -0.888889,
+        5 => 0.888889,
+        6 => 2.666667,
+        7 => 4.444444,
+        8 => 6.222222,
+        9 => 8.000000
     );
 
     -- Expected outputs
     constant EXPECTED_OUTPUTS : real_array := (
         0 => 0.0003353501,
-        1 => 0.0009737971,
-        2 => 0.0028242994,
-        3 => 0.0081625712,
-        4 => 0.0233545165,
-        5 => 0.0649691691,
-        6 => 0.1679816149,
-        7 => 0.3697397771,
-        8 => 0.6302602229,
-        9 => 0.8320183851,
-        10 => 0.9350308309,
-        11 => 0.9766454835,
-        12 => 0.9918374288,
-        13 => 0.9971757006,
-        14 => 0.9990262029,
-        15 => 0.9996646499
+        1 => 0.0019808978,
+        2 => 0.0116073164,
+        3 => 0.0649691691,
+        4 => 0.2913391750,
+        5 => 0.7086608250,
+        6 => 0.9350308309,
+        7 => 0.9883926836,
+        8 => 0.9980191022,
+        9 => 0.9996646499
     );
 
     constant TOLERANCE : real := 0.01;  -- 1% tolerance for comparison
@@ -82,9 +57,7 @@ begin
     -- DUT instantiation (sigmoid architecture)
     dut: entity work.activation_func(sigmoid)
         generic map(
-            input_width => 32,
-            input_frac_width => 16,
-            output_width => 32
+            input_width => DATA_WIDTH
         )
         port map(
             input_i => input_s,
@@ -105,8 +78,8 @@ begin
         report "========================================";
         report "Starting Sigmoid Activation Function Test";
         report "LUT Size: " & integer'image(LUT_SIZE);
-        report "Input Width: " & integer'image(32);
-        report "Output Width: " & integer'image(32);
+        report "Input Width: " & integer'image(DATA_WIDTH);
+        report "Output Width: " & integer'image(DATA_WIDTH);
         report "========================================";
 
         -- Run tests

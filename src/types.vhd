@@ -7,12 +7,13 @@ package types is
 
     -- Global Fixed-Point Configuration
     constant DATA_WIDTH : integer := 32;
-    constant NUM_FRAC_BITS : integer := 16;
-    
+    constant FRAC_BITS : integer := 16;
+
     -- Derived constants
-    constant NUM_INT_BITS : integer := DATA_WIDTH - NUM_FRAC_BITS;
+    constant INT_BITS : integer := DATA_WIDTH - FRAC_BITS;
 
     subtype std_logic_bus is std_logic_vector(DATA_WIDTH - 1 downto 0);
+    subtype sfixed_bus is sfixed(INT_BITS - 1 downto -FRAC_BITS);
     type std_logic_bus_array is array (integer range<>) of std_logic_vector; -- for neuron weights and inputs
     type weights_matrix is array (integer range<>) of std_logic_bus_array; -- for layer weights
     -- Unconstrained integer array for layer sizes (avoiding conflict with VHDL-2008 integer_vector)
@@ -23,27 +24,26 @@ package types is
 
     function to_sfixed_a(arg: integer) return unresolved_sfixed;
     function to_sfixed_a(arg: real) return unresolved_sfixed;
-    -- function to_real(arg: sfixed_bus_array) return real_array; -- Removed as sfixed_bus_array is gone
 
 end package types;
 
 package body types is
     function to_sfixed_a(arg: integer) return unresolved_sfixed is
-        variable result : unresolved_sfixed(NUM_INT_BITS - 1 downto -NUM_FRAC_BITS);
+        variable result : unresolved_sfixed(INT_BITS - 1 downto -FRAC_BITS);
     begin
         result := to_sfixed(
                 arg => arg,
-                left_index => NUM_INT_BITS - 1,
-                right_index => -NUM_FRAC_BITS);
+                left_index => INT_BITS - 1,
+                right_index => -FRAC_BITS);
         return result;
     end function to_sfixed_a;
     function to_sfixed_a(arg: real) return unresolved_sfixed is
-        variable result : unresolved_sfixed(NUM_INT_BITS - 1 downto -NUM_FRAC_BITS);
+        variable result : unresolved_sfixed(INT_BITS - 1 downto -FRAC_BITS);
     begin
         result := to_sfixed(
                 arg => arg,
-                left_index => NUM_INT_BITS - 1,
-                right_index => -NUM_FRAC_BITS);
+                left_index => INT_BITS - 1,
+                right_index => -FRAC_BITS);
         return result;
     end function to_sfixed_a;
 

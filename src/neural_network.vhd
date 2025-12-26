@@ -6,33 +6,32 @@ use work.pkg_layer.all;
 
 entity neural_network is
     generic(
-        NUM_INPUTS  : integer := 4;
-        NUM_OUTPUTS : integer := 1;
-        MEMORY_SIZE : integer := 1024
+        NUM_INPUTS  : integer := 2;
+        NUM_LAYERS  : integer := 2;
+        LAYER_SIZES : layer_config_array  -- e.g., (3, 1) for hidden=3, output=1
     );
     port (
         clk : in std_logic;
         rst : in std_logic;
 
         -- Control Interface
-        start       : in std_logic;
-        train_mode  : in std_logic;
-        ready       : out std_logic;
-        done        : out std_logic;
+        load_weights : in std_logic;   -- Trigger weight loading from memory
+        start        : in std_logic;   -- Start inference (weights must be loaded)
+        train_mode   : in std_logic;
 
-        -- Host Interface (Weight Loading)
+        -- Status
+        weights_loaded : out std_logic;  -- Weights are loaded
+        ready          : out std_logic;
+        done           : out std_logic;
+
+        -- Host Interface (Memory Loading: inputs at 0..NUM_INPUTS-1, weights after)
         host_write_en : in std_logic;
         host_addr     : in integer;
         host_data     : in std_logic_vector(DATA_WIDTH - 1 downto 0);
 
-        -- Data Interface (Streaming)
-        input_data   : in std_logic_vector(DATA_WIDTH - 1 downto 0);
-        input_valid  : in std_logic;
-        input_last   : in std_logic;
-        
+        -- Output Interface
         output_data  : out std_logic_vector(DATA_WIDTH - 1 downto 0);
-        output_valid : out std_logic;
-        output_last  : out std_logic
+        output_valid : out std_logic
     );
 end entity neural_network;
 
@@ -40,10 +39,11 @@ architecture rtl of neural_network is
 
     -- Internal Signals
     signal calc_mode   : std_logic;
-    signal calc_start  : std_logic; -- Not used by calc unit yet, but part of control
-    signal calc_store  : std_logic; -- Trigger for gradient storage
-    signal calc_done   : std_logic := '0'; -- Placeholder
-    signal calc_ready  : std_logic; -- From Calc Unit
+    signal calc_start  : std_logic;
+    signal calc_store  : std_logic;
+    signal calc_done   : std_logic;
+    signal calc_ready  : std_logic;
+    signal calc_weights_loaded : std_logic;
     signal learning_rate : std_logic_vector(DATA_WIDTH - 1 downto 0);
 
     -- Memory <-> Calc Interface
@@ -51,16 +51,15 @@ architecture rtl of neural_network is
     signal mem_read_addr  : integer := 0;
     signal mem_read_data  : std_logic_vector(DATA_WIDTH - 1 downto 0);
     signal mem_read_valid : std_logic;
-    
+
     signal mem_update_en   : std_logic;
     signal mem_update_addr : integer := 0;
     signal mem_update_grad : std_logic_vector(DATA_WIDTH - 1 downto 0);
 
-    -- Internal Signals
-    signal calc_out_valid : std_logic;
-    signal calc_out_last : std_logic;
-
 begin
+
+    -- Status outputs
+    weights_loaded <= calc_weights_loaded;
 
     -- Control Unit
     u_control : entity work.control_unit
@@ -99,18 +98,24 @@ begin
 
     -- Calculation Unit
     u_calc : entity work.calculation_unit
+        generic map (
+            NUM_INPUTS  => NUM_INPUTS,
+            NUM_LAYERS  => NUM_LAYERS,
+            LAYER_SIZES => LAYER_SIZES
+        )
         port map (
             clk => clk,
             rst => rst,
+            load_weights => load_weights,
+            start => calc_start,
             mode => calc_mode,
             start_store => calc_store,
-            input_data => input_data,
-            input_valid => input_valid,
-            input_last => input_last,
+            weights_loaded => calc_weights_loaded,
+            ready => calc_ready,
+            done => calc_done,
             output_data => output_data,
             output_valid => output_valid,
-            output_last => output_last,
-            error_in => (others => '0'), -- Placeholder for backprop
+            error_in => (others => '0'),
             error_in_valid => '0',
             mem_read_req => mem_read_req,
             mem_read_addr => mem_read_addr,
@@ -118,8 +123,7 @@ begin
             mem_read_valid => mem_read_valid,
             mem_update_en => mem_update_en,
             mem_update_addr => mem_update_addr,
-            mem_update_grad => mem_update_grad,
-            ready => calc_ready
+            mem_update_grad => mem_update_grad
         );
 
 end architecture rtl;

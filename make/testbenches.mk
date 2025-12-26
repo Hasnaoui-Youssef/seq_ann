@@ -15,7 +15,7 @@ WAVEFILE = $(WORKDIR)/$(TESTBENCH).$(WAVE_FORMAT)
 GHDL_FLAGS = --workdir=$(WORKDIR) --std=08 --ieee=synopsys -frelaxed --warn-no-vital-generic
 
 # Compilation
-compile:
+compile: $(FILES) $(TESTBENCHFILE)
 	@mkdir -p $(WORKDIR)
 	@echo "Compiling sources..."
 	@ghdl -a $(GHDL_FLAGS) $(FILES)

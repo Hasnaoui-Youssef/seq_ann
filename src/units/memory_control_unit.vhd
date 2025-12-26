@@ -7,7 +7,6 @@ use work.pkg_layer.all;
 
 entity memory_control_unit is
     generic (
-        MEMORY_SIZE : integer := 1024;
         ADDR_WIDTH  : integer := 10
     );
     port (
@@ -35,33 +34,11 @@ end entity memory_control_unit;
 
 architecture rtl of memory_control_unit is
 
-    -- BRAM Component
-    component bram is
-        generic(
-            DATA_WIDTH : integer := 16;
-            ADDR_WIDTH : integer := 16
-        );
-        port(
-            clka : in std_logic;
-            clkb : in std_logic;
-            ena : in std_logic;
-            enb : in std_logic;
-            wea : in std_logic;
-            web : in std_logic;
-            addra : in std_logic_vector(ADDR_WIDTH - 1 downto 0);
-            addrb : in std_logic_vector(ADDR_WIDTH - 1 downto 0);
-            dia : in std_logic_vector(DATA_WIDTH - 1 downto 0);
-            dib : in std_logic_vector(DATA_WIDTH - 1 downto 0);
-            doa : out std_logic_vector(DATA_WIDTH - 1 downto 0);
-            dob : out std_logic_vector(DATA_WIDTH - 1 downto 0)
-        );
-    end component;
-
     -- BRAM Signals
     signal bram_wea : std_logic;
-    signal bram_addra : std_logic_vector(ADDR_WIDTH - 1 downto 0);
+    signal bram_addra : std_logic_vector(ADDR_WIDTH - 1 downto 0) := (others => '0');
     signal bram_dia : std_logic_vector(DATA_WIDTH - 1 downto 0);
-    signal bram_addrb : std_logic_vector(ADDR_WIDTH - 1 downto 0);
+    signal bram_addrb : std_logic_vector(ADDR_WIDTH - 1 downto 0) := (others => '0');
     signal bram_dob : std_logic_vector(DATA_WIDTH - 1 downto 0);
 
     -- Pipeline Signals for Update (Read-Modify-Write)
@@ -78,22 +55,22 @@ architecture rtl of memory_control_unit is
         lr    : std_logic_vector;
         grad  : std_logic_vector
     ) return std_logic_vector is
-        variable w_sfixed : sfixed(DATA_WIDTH/2 - 1 downto -DATA_WIDTH/2);
-        variable lr_sfixed : sfixed(DATA_WIDTH/2 - 1 downto -DATA_WIDTH/2);
-        variable grad_sfixed : sfixed(DATA_WIDTH/2 - 1 downto -DATA_WIDTH/2);
-        variable delta : sfixed(DATA_WIDTH/2 - 1 downto -DATA_WIDTH/2);
-        variable result : sfixed(DATA_WIDTH/2 - 1 downto -DATA_WIDTH/2);
+        variable w_sfixed : sfixed_bus;
+        variable lr_sfixed : sfixed_bus;
+        variable grad_sfixed : sfixed_bus;
+        variable delta : sfixed_bus;
+        variable result : sfixed_bus;
     begin
         w_sfixed := to_sfixed(w_old, w_sfixed);
         lr_sfixed := to_sfixed(lr, lr_sfixed);
         grad_sfixed := to_sfixed(grad, grad_sfixed);
-        
+
         -- delta = lr * grad
         delta := resize(lr_sfixed * grad_sfixed, delta);
-        
+
         -- result = w_old - delta
         result := resize(w_sfixed - delta, result);
-        
+
         return to_std_logic_vector(result);
     end function;
 
@@ -107,7 +84,7 @@ begin
     -- Instantiate BRAM
     -- Port A: Writes (Host or Update)
     -- Port B: Reads (Calc or Update)
-    u_bram : bram
+    u_bram : entity work.bram
         generic map (
             DATA_WIDTH => DATA_WIDTH,
             ADDR_WIDTH => ADDR_WIDTH
@@ -149,7 +126,7 @@ begin
     process(host_write_en, host_addr, host_data_in, update_en_d1, update_addr_d1, update_data_d1, lr_d1, update_grad_d1)
     begin
         if host_write_en = '1' then
-            report "MemCtrl Write: addr=" & integer'image(host_addr) & " data=" & to_hstring(host_data_in);
+            --report "MemCtrl Write: addr=" & integer'image(host_addr) & " data=" & to_hstring(host_data_in);
             bram_wea <= '1';
             if host_addr >= 0 and host_addr < 2**ADDR_WIDTH then
                 bram_addra <= std_logic_vector(to_unsigned(host_addr, ADDR_WIDTH));
@@ -178,16 +155,16 @@ begin
     begin
         if rising_edge(clk) then
             -- Debug
-            if read_req = '1' or read_req_d1 = '1' or read_req_d2 = '1' or read_valid = '1' then
-                report "MemCtrl Debug: read_req=" & std_logic'image(read_req) &
-                       " read_req_prev=" & std_logic'image(read_req_prev) &
-                       " read_req_d1=" & std_logic'image(read_req_d1) &
-                       " read_req_d2=" & std_logic'image(read_req_d2) &
-                       " read_valid=" & std_logic'image(read_valid) &
-                       " bram_dob=" & to_hstring(bram_dob) &
-                       " addrb=" & to_hstring(bram_addrb);
-            end if;
-            
+            --if read_req = '1' or read_req_d1 = '1' or read_req_d2 = '1' or read_valid = '1' then
+            --    report "MemCtrl Debug: read_req=" & std_logic'image(read_req) &
+            --           " read_req_prev=" & std_logic'image(read_req_prev) &
+            --           " read_req_d1=" & std_logic'image(read_req_d1) &
+            --           " read_req_d2=" & std_logic'image(read_req_d2) &
+            --           " read_valid=" & std_logic'image(read_valid) &
+            --           " bram_dob=" & to_hstring(bram_dob) &
+            --           " addrb=" & to_hstring(bram_addrb);
+            --end if;
+
             if rst = '1' then
                 update_en_d1 <= '0';
                 read_valid <= '0';
@@ -200,21 +177,21 @@ begin
                 update_addr_d1 <= update_addr;
                 update_grad_d1 <= update_grad;
                 lr_d1 <= learning_rate;
-                
+
                 -- Capture Read Data (for Update)
                 update_data_d1 <= bram_dob;
 
                 -- Read Request Edge Detection
                 -- Detect rising edge of read_req for proper request handshaking
                 read_req_prev <= read_req;
-                
+
                 -- Stage 1: Set when rising edge detected
                 if read_req = '1' and read_req_prev = '0' and update_en = '0' then
                     read_req_d1 <= '1';
                 else
                     read_req_d1 <= '0';
                 end if;
-                
+
                 -- Stage 2: Pipeline delay for BRAM
                 read_req_d2 <= read_req_d1;
 

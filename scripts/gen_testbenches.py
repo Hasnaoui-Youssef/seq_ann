@@ -3,31 +3,33 @@
 import argparse
 import math
 from pathlib import Path
-from config import SigmoidConfig, sigmoid
+import sys
 
-def get_sfixed_range(width, frac_width=None):
-    if frac_width is None:
-        high = (width + 1) // 2 - 1
-        low = -(width // 2)
-    else:
-        high = width - frac_width - 1
-        low = -frac_width
-    return high, low
+# Add scripts directory to path for imports
+scripts_dir = Path(__file__).parent
+sys.path.insert(0, str(scripts_dir))
 
-def generate_activation_func_tb(config : SigmoidConfig, output_file="testbench/activation_func_tb.vhd"):
+from config import auto_load_config, SigmoidConfig as YamlSigmoidConfig
+
+
+def sigmoid(x: float) -> float:
+    """Compute sigmoid function."""
+    return 1.0 / (1.0 + math.exp(-x))
+
+def generate_activation_func_tb(sigmoid_config: YamlSigmoidConfig, int_bits: int, frac_bits: int, 
+                                num_test_inputs: int, output_file: str = "testbench/activation_func_tb.vhd"):
     """Generate VHDL testbench for sigmoid activation function"""
 
     # Generate test vectors
     test_vectors = []
-    x_min, x_max = config.input_range
+    x_min, x_max = sigmoid_config.input_range
 
-    for i in range(config.num_test_inputs):
-        x = x_min + (x_max - x_min) * i / (config.num_test_inputs - 1)
+    for i in range(num_test_inputs):
+        x = x_min + (x_max - x_min) * i / (num_test_inputs - 1)
         expected = sigmoid(x)
         test_vectors.append((x, expected))
 
-    in_high, in_low = get_sfixed_range(config.input_width, config.input_frac_width)
-    out_high, out_low = get_sfixed_range(config.output_width)
+    data_width = int_bits + frac_bits
 
     vhdl_code = f"""library ieee;
 use ieee.std_logic_1164.all;
@@ -41,30 +43,17 @@ entity activation_func_tb is
 end entity activation_func_tb;
 
 architecture testbench of activation_func_tb is
-    -- Component declaration
-    component activation_func is
-        generic(
-            input_width : integer := {config.input_width};
-            input_frac_width : integer := {config.input_frac_width};
-            output_width : integer := {config.output_width}
-        );
-        port(
-            input_i : in std_logic_vector(input_width - 1 downto 0);
-            output_o : out sfixed((output_width + 1) / 2 - 1 downto - (output_width / 2))
-        );
-    end component;
-
     -- Test signals
-    signal input_s : std_logic_vector({config.input_width} - 1 downto 0);
-    signal output_s : sfixed({out_high} downto {out_low});
+    signal input_s : std_logic_vector(DATA_WIDTH - 1 downto 0);
+    signal output_s : sfixed_bus;
 
     -- Helper signals
-    signal input_sfixed : sfixed({in_high} downto {in_low});
+    signal input_sfixed : sfixed_bus;
     signal input_real : real;
     signal output_real : real;
 
     -- Test configuration
-    constant NUM_TESTS : integer := {config.num_test_inputs};
+    constant NUM_TESTS : integer := {num_test_inputs};
     type real_array is array (0 to NUM_TESTS - 1) of real;
 
     -- Test vectors: input values
@@ -89,7 +78,7 @@ architecture testbench of activation_func_tb is
         else:
             vhdl_code += f"        {i} => {expected:.10f},\n"
 
-    vhdl_code += f"""    );
+    vhdl_code += """    );
 
     constant TOLERANCE : real := 0.01;  -- 1% tolerance for comparison
 
@@ -97,9 +86,7 @@ begin
     -- DUT instantiation (sigmoid architecture)
     dut: entity work.activation_func(sigmoid)
         generic map(
-            input_width => {config.input_width},
-            input_frac_width => {config.input_frac_width},
-            output_width => {config.output_width}
+            input_width => DATA_WIDTH
         )
         port map(
             input_i => input_s,
@@ -120,8 +107,8 @@ begin
         report "========================================";
         report "Starting Sigmoid Activation Function Test";
         report "LUT Size: " & integer'image(LUT_SIZE);
-        report "Input Width: " & integer'image({config.input_width});
-        report "Output Width: " & integer'image({config.output_width});
+        report "Input Width: " & integer'image(DATA_WIDTH);
+        report "Output Width: " & integer'image(DATA_WIDTH);
         report "========================================";
 
         -- Run tests
@@ -178,11 +165,12 @@ end architecture testbench;
     print(f"Generated testbench: {output_file}")
     return output_file
 
-def generate_neuron_tb(config : SigmoidConfig, output_file="testbench/neuron_tb.vhd"):
+def generate_neuron_tb(sigmoid_config: YamlSigmoidConfig, int_bits: int, frac_bits: int,
+                       output_file: str = "testbench/neuron_tb.vhd"):
     """Generate VHDL testbench for neuron with backpropagation interface"""
 
     # Calculate max step in LUT for tolerance
-    input_step = (config.input_range[1] - config.input_range[0]) / config.lut_size
+    input_step = (sigmoid_config.input_range[1] - sigmoid_config.input_range[0]) / sigmoid_config.lut_size
     max_lut_step = 0.25 * input_step
     tolerance = max_lut_step * 1.5
 
@@ -199,27 +187,26 @@ end entity neuron_tb;
 
 architecture testbench of neuron_tb is
     constant NUM_INPUTS_C : integer := 4;
-    constant DATA_WIDTH_C : integer := {config.input_width};
     constant USE_SIGMOID_C : boolean := true;
     constant TOLERANCE_C : real := {tolerance:.6f};
     constant CLK_PERIOD : time := 10 ns;
 
     signal clk : std_logic := '0';
     signal rst : std_logic := '1';
-    
+
     -- Forward pass signals
     signal fwd_en : std_logic := '0';
-    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
-    signal weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
-    signal bias_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
-    signal output_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0);
-    
+    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH - 1 downto 0);
+    signal weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH - 1 downto 0);
+    signal bias_s : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal output_s : std_logic_vector(DATA_WIDTH - 1 downto 0);
+
     -- Backward pass signals (not used in forward-only test)
     signal bwd_en : std_logic := '0';
-    signal error_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
-    signal grad_weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
-    signal grad_bias_s : std_logic_vector(DATA_WIDTH_C - 1 downto 0);
-    signal grad_inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH_C - 1 downto 0);
+    signal error_s : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal grad_weights_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH - 1 downto 0);
+    signal grad_bias_s : std_logic_vector(DATA_WIDTH - 1 downto 0);
+    signal grad_inputs_s : std_logic_bus_array(0 to NUM_INPUTS_C - 1)(DATA_WIDTH - 1 downto 0);
 
     -- Test vectors
     type real_array is array (integer range <>) of real;
@@ -308,14 +295,14 @@ begin
         variable fail_count : integer := 0;
         variable expected_sigmoid : real;
         variable output_real : real;
-        variable input_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-        variable weight_fixed : sfixed((DATA_WIDTH_C  + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-        variable output_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
+        variable input_fixed : sfixed_bus;
+        variable weight_fixed : sfixed_bus;
+        variable output_fixed : sfixed_bus;
     begin
         report "========================================";
         report "Starting Neuron Test";
         report "Num Inputs: " & integer'image(NUM_INPUTS_C);
-        report "Data Width: " & integer'image(DATA_WIDTH_C);
+        report "Data Width: " & integer'image(DATA_WIDTH);
         if USE_SIGMOID_C then
             report "Activation: Sigmoid";
         else
@@ -323,7 +310,7 @@ begin
         end if;
         report "Tolerance: " & real'image(TOLERANCE_C);
         report "========================================";
-        
+
         -- Reset
         rst <= '1';
         fwd_en <= '0';
@@ -335,7 +322,7 @@ begin
         for test_idx in TEST_CASES'range loop
             report "----------------------------------------";
             report "Test " & integer'image(test_idx) & ": " & TEST_CASES(test_idx).description;
-            
+
             -- Set weights (directly, no weight loading interface)
             for i in 0 to NUM_INPUTS_C - 1 loop
                 weight_fixed := to_sfixed(arg => TEST_CASES(test_idx).weights(i),
@@ -348,7 +335,7 @@ begin
                                      left_index => weight_fixed'high,
                                      right_index => weight_fixed'low);
             bias_s <= to_slv(weight_fixed);
-            
+
             -- Set inputs
             for i in 0 to NUM_INPUTS_C - 1 loop
                 input_fixed := to_sfixed(arg => TEST_CASES(test_idx).inputs(i),
@@ -430,11 +417,12 @@ end architecture testbench;
     print(f"Generated neuron testbench: {output_file}")
     return output_file
 
-def generate_layer_tb(config : SigmoidConfig, output_file="testbench/layer_tb.vhd"):
+def generate_layer_tb(sigmoid_config: YamlSigmoidConfig, int_bits: int, frac_bits: int,
+                      output_file: str = "testbench/layer_tb.vhd"):
     """Generate VHDL testbench for layer"""
 
     # Calculate tolerance
-    input_step = (config.input_range[1] - config.input_range[0]) / config.lut_size
+    input_step = (sigmoid_config.input_range[1] - sigmoid_config.input_range[0]) / sigmoid_config.lut_size
     max_lut_step = 0.25 * input_step
     tolerance = max_lut_step * 2.0 # Slightly looser for layer due to accumulation
 
@@ -443,18 +431,24 @@ def generate_layer_tb(config : SigmoidConfig, output_file="testbench/layer_tb.vh
         return 1.0 / (1.0 + math.exp(-x))
 
     # Test Configuration: Single Layer (4 inputs -> 2 outputs)
+    num_inputs = 4
+    num_outputs = 2
     inputs_1 = [0.5, 1.0, -0.5, 0.25]
-    weights_1 = [
-        [1.0, 0.5, -0.5, 0.75, 0.5],   # Neuron 0 (last is bias)
-        [0.5, 1.0, 0.25, -0.5, -0.25]  # Neuron 1
-    ]
-    
+    # Weights in flat array format: [n0_w0, n0_w1, n0_w2, n0_w3, n0_bias, n1_w0, n1_w1, n1_w2, n1_w3, n1_bias]
+    weights_flat = [1.0, 0.5, -0.5, 0.75, 0.5, 0.5, 1.0, 0.25, -0.5, -0.25]
+
     expected_1 = []
-    for i in range(2):
-        sum_val = weights_1[i][4] # Bias
-        for j in range(4):
-            sum_val += inputs_1[j] * weights_1[i][j]
+    for i in range(num_outputs):
+        base = i * (num_inputs + 1)
+        sum_val = weights_flat[base + num_inputs]  # Bias
+        for j in range(num_inputs):
+            sum_val += inputs_1[j] * weights_flat[base + j]
         expected_1.append(sigmoid_activation(sum_val))
+
+    # Generate input initialization code
+    input_init_code = ""
+    for i, inp in enumerate(inputs_1):
+        input_init_code += f"        inputs_s({i}) <= to_slv(to_sfixed({inp}, INT_BITS - 1, -FRAC_BITS));\n"
 
     vhdl_code = f"""library ieee;
 use ieee.std_logic_1164.all;
@@ -462,29 +456,55 @@ use ieee.numeric_std.all;
 use ieee.fixed_pkg.all;
 
 use work.types.all;
+use work.pkg_layer.all;
 
 entity layer_tb is
 end entity layer_tb;
 
 architecture testbench of layer_tb is
     -- Configuration
-    constant NUM_INPUTS : integer := 4;
-    constant NUM_OUTPUTS : integer := 2;
-    constant DATA_WIDTH_C : integer := {config.input_width};
+    constant NUM_INPUTS : integer := {num_inputs};
+    constant NUM_OUTPUTS : integer := {num_outputs};
+    constant NUM_WEIGHTS : integer := (NUM_INPUTS + 1) * NUM_OUTPUTS;
     constant USE_SIGMOID_C : boolean := true;
     constant TOLERANCE_C : real := {tolerance:.6f};
     constant CLK_PERIOD : time := 10 ns;
 
     -- Signals
     signal clk : std_logic := '0';
-    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH_C - 1 downto 0);
-    signal output_s : std_logic_bus_array(0 to NUM_OUTPUTS - 1)(DATA_WIDTH_C - 1 downto 0);
-    
-    -- Weight loading
-    signal load_enable : std_logic := '0';
-    signal neuron_select : integer := 0;
-    signal weight_data : std_logic_vector(DATA_WIDTH_C - 1 downto 0) := (others => '0');
-    signal weight_index : integer := 0;
+    signal rst : std_logic := '1';
+
+    -- Forward interface
+    signal fwd_en : std_logic := '1';
+    signal bwd_en : std_logic := '0';
+    signal fwd_ctrl_in : layer_control_t := (valid => '0', last => '0');
+    signal fwd_ctrl_out : layer_control_t;
+    signal inputs_s : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0) := (others => (others => '0'));
+    signal outputs_s : std_logic_bus_array(0 to NUM_OUTPUTS - 1)(DATA_WIDTH - 1 downto 0);
+
+    -- Backward interface (unused)
+    signal bwd_ctrl_in : layer_control_t := (valid => '0', last => '0');
+    signal bwd_ctrl_out : layer_control_t;
+    signal bwd_error_in : std_logic_bus_array(0 to NUM_OUTPUTS - 1)(DATA_WIDTH - 1 downto 0) := (others => (others => '0'));
+    signal bwd_error_out : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
+
+    -- Weight Bank Interface
+    signal weight_load_en : std_logic := '0';
+    signal weight_load_data : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal weight_load_done : std_logic;
+    signal weight_save_en : std_logic := '0';
+    signal weight_save_data : std_logic_vector(DATA_WIDTH - 1 downto 0);
+    signal weight_save_done : std_logic;
+    signal weight_update_en : std_logic := '0';
+    signal weight_learn_rate : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
+    signal weight_update_done : std_logic;
+
+    -- Gradients
+    signal grads_s : std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
+
+    -- Weight values to load
+    type weight_array_t is array (0 to NUM_WEIGHTS - 1) of real;
+    constant WEIGHTS : weight_array_t := ({', '.join([str(w) for w in weights_flat])});
 
 begin
     -- Clock generation
@@ -499,24 +519,37 @@ begin
     -- DUT Instantiation
     dut: entity work.layer
         generic map(
-            num_inputs => NUM_INPUTS,
-            layer_size => NUM_OUTPUTS,
-            use_sigmoid => USE_SIGMOID_C
+            NUM_INPUTS => NUM_INPUTS,
+            LAYER_SIZE => NUM_OUTPUTS,
+            USE_SIGMOID => USE_SIGMOID_C
         )
         port map(
             clk => clk,
-            inputs_i => inputs_s,
-            load_enable => load_enable,
-            neuron_select => neuron_select,
-            weight_data => weight_data,
-            weight_index => weight_index,
-            output_o => output_s
+            rst => rst,
+            fwd_en => fwd_en,
+            bwd_en => bwd_en,
+            fwd_ctrl_in => fwd_ctrl_in,
+            fwd_data_in => inputs_s,
+            fwd_ctrl_out => fwd_ctrl_out,
+            fwd_data_out => outputs_s,
+            bwd_ctrl_in => bwd_ctrl_in,
+            bwd_error_in => bwd_error_in,
+            bwd_ctrl_out => bwd_ctrl_out,
+            bwd_error_out => bwd_error_out,
+            weight_load_en => weight_load_en,
+            weight_load_data => weight_load_data,
+            weight_load_done => weight_load_done,
+            weight_save_en => weight_save_en,
+            weight_save_data => weight_save_data,
+            weight_save_done => weight_save_done,
+            weight_update_en => weight_update_en,
+            weight_learn_rate => weight_learn_rate,
+            weight_update_done => weight_update_done,
+            grads_out => grads_s
         );
 
     -- Test Process
     test_proc: process
-        variable input_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
-        variable weight_fixed : sfixed((DATA_WIDTH_C + 1) / 2 - 1 downto -(DATA_WIDTH_C / 2));
         variable output_real : real;
         variable pass_count : integer := 0;
         variable fail_count : integer := 0;
@@ -524,75 +557,43 @@ begin
         report "========================================";
         report "Starting Layer Testbench";
         report "========================================";
-        
-        -- Init
-        load_enable <= '0';
+
+        -- Reset
+        rst <= '1';
         wait for CLK_PERIOD * 2;
+        rst <= '0';
+        wait for CLK_PERIOD;
 
-        -- 1. Load Weights
-        report "Loading weights...";
-        
-        -- Neuron 0
-        neuron_select <= 0;
-        -- Weights: {weights_1[0]}
-        -- w0
-        weight_fixed := to_sfixed({weights_1[0][0]}, weight_fixed'high, weight_fixed'low);
-        weight_data <= to_slv(weight_fixed); weight_index <= 0; load_enable <= '1'; wait until rising_edge(clk);
-        -- w1
-        weight_fixed := to_sfixed({weights_1[0][1]}, weight_fixed'high, weight_fixed'low);
-        weight_data <= to_slv(weight_fixed); weight_index <= 1; load_enable <= '1'; wait until rising_edge(clk);
-        -- w2
-        weight_fixed := to_sfixed({weights_1[0][2]}, weight_fixed'high, weight_fixed'low);
-        weight_data <= to_slv(weight_fixed); weight_index <= 2; load_enable <= '1'; wait until rising_edge(clk);
-        -- w3
-        weight_fixed := to_sfixed({weights_1[0][3]}, weight_fixed'high, weight_fixed'low);
-        weight_data <= to_slv(weight_fixed); weight_index <= 3; load_enable <= '1'; wait until rising_edge(clk);
-        -- bias
-        weight_fixed := to_sfixed({weights_1[0][4]}, weight_fixed'high, weight_fixed'low);
-        weight_data <= to_slv(weight_fixed); weight_index <= 4; load_enable <= '1'; wait until rising_edge(clk);
-
-        -- Neuron 1
-        neuron_select <= 1;
-        -- Weights: {weights_1[1]}
-        -- w0
-        weight_fixed := to_sfixed({weights_1[1][0]}, weight_fixed'high, weight_fixed'low);
-        weight_data <= to_slv(weight_fixed); weight_index <= 0; load_enable <= '1'; wait until rising_edge(clk);
-        -- w1
-        weight_fixed := to_sfixed({weights_1[1][1]}, weight_fixed'high, weight_fixed'low);
-        weight_data <= to_slv(weight_fixed); weight_index <= 1; load_enable <= '1'; wait until rising_edge(clk);
-        -- w2
-        weight_fixed := to_sfixed({weights_1[1][2]}, weight_fixed'high, weight_fixed'low);
-        weight_data <= to_slv(weight_fixed); weight_index <= 2; load_enable <= '1'; wait until rising_edge(clk);
-        -- w3
-        weight_fixed := to_sfixed({weights_1[1][3]}, weight_fixed'high, weight_fixed'low);
-        weight_data <= to_slv(weight_fixed); weight_index <= 3; load_enable <= '1'; wait until rising_edge(clk);
-        -- bias
-        weight_fixed := to_sfixed({weights_1[1][4]}, weight_fixed'high, weight_fixed'low);
-        weight_data <= to_slv(weight_fixed); weight_index <= 4; load_enable <= '1'; wait until rising_edge(clk);
-
-        load_enable <= '0';
-        wait until rising_edge(clk);
+        -- Load weights sequentially into weight bank
+        report "Loading weights into weight bank...";
+        for i in 0 to NUM_WEIGHTS - 1 loop
+            weight_load_data <= to_slv(to_sfixed(WEIGHTS(i), INT_BITS - 1, -FRAC_BITS));
+            weight_load_en <= '1';
+            wait until rising_edge(clk);
+            weight_load_en <= '0';
+            wait until rising_edge(clk);
+        end loop;
         report "Weights loaded.";
 
-        -- 2. Set Inputs
-        -- Inputs: {inputs_1}
-        input_fixed := to_sfixed({inputs_1[0]}, input_fixed'high, input_fixed'low);
-        inputs_s(0) <= to_slv(input_fixed);
-        input_fixed := to_sfixed({inputs_1[1]}, input_fixed'high, input_fixed'low);
-        inputs_s(1) <= to_slv(input_fixed);
-        input_fixed := to_sfixed({inputs_1[2]}, input_fixed'high, input_fixed'low);
-        inputs_s(2) <= to_slv(input_fixed);
-        input_fixed := to_sfixed({inputs_1[3]}, input_fixed'high, input_fixed'low);
-        inputs_s(3) <= to_slv(input_fixed);
+        -- Set inputs
+        report "Setting inputs...";
+{input_init_code}
+        -- Trigger forward pass
+        fwd_ctrl_in.valid <= '1';
+        fwd_ctrl_in.last <= '1';
+        wait until rising_edge(clk);
+        fwd_ctrl_in.valid <= '0';
+        fwd_ctrl_in.last <= '0';
 
-        -- 3. Wait for computation
+        -- Wait for computation (pipeline delay)
+        wait until rising_edge(clk);
         wait until rising_edge(clk);
         wait until rising_edge(clk);
         wait for CLK_PERIOD / 2;
 
-        -- 4. Check Outputs
+        -- Check Outputs
         -- Output 0
-        output_real := to_real(to_sfixed(output_s(0), input_fixed));
+        output_real := to_real(to_sfixed(outputs_s(0), INT_BITS - 1, -FRAC_BITS));
         report "Output[0]: " & real'image(output_real) & " Expected: {expected_1[0]:.6f}";
         if abs(output_real - {expected_1[0]:.6f}) < TOLERANCE_C then
             pass_count := pass_count + 1; report "PASS";
@@ -601,7 +602,7 @@ begin
         end if;
 
         -- Output 1
-        output_real := to_real(to_sfixed(output_s(1), input_fixed));
+        output_real := to_real(to_sfixed(outputs_s(1), INT_BITS - 1, -FRAC_BITS));
         report "Output[1]: " & real'image(output_real) & " Expected: {expected_1[1]:.6f}";
         if abs(output_real - {expected_1[1]:.6f}) < TOLERANCE_C then
             pass_count := pass_count + 1; report "PASS";
@@ -613,7 +614,7 @@ begin
         report "========================================";
         report "Passed: " & integer'image(pass_count) & "/2";
         report "Failed: " & integer'image(fail_count) & "/2";
-        
+
         if fail_count = 0 then
             report "ALL TESTS PASSED!" severity note;
         else
@@ -637,52 +638,64 @@ def main():
     parser = argparse.ArgumentParser(
         description='Generate testbenches for VHDL components'
     )
-    parser.add_argument('--lut-size', type=int, default=256,
-                        help='Number of LUT entries (default: 256)')
-    parser.add_argument('--input-width', type=int, default=32,
-                        help='Input width in bits (default: 32)')
-    parser.add_argument('--input-frac-width', type=int, default=16,
-                        help='Input fractional width in bits (default: 16)')
-    parser.add_argument('--output-width', type=int, default=32,
-                        help='Output width in bits (default: 32)')
+    parser.add_argument('--config', type=str, default=None,
+                        help='Path to YAML config file (searches for *.nn_conf.yaml if not specified)')
+    parser.add_argument('--root', type=str, default='.',
+                        help='Project root directory (default: current directory)')
     parser.add_argument('--num-tests', type=int, default=16,
                         help='Number of test vectors (default: 16)')
-    parser.add_argument('--input-min', type=float, default=-8.0,
-                        help='Minimum input value (default: -8.0)')
-    parser.add_argument('--input-max', type=float, default=8.0,
-                        help='Maximum input value (default: 8.0)')
 
     args = parser.parse_args()
 
-    # Create configuration
-    config = SigmoidConfig(
-        lut_size=args.lut_size,
-        input_width=args.input_width,
-        input_frac_width=args.input_frac_width,
-        output_width=args.output_width,
-        num_test_inputs=args.num_tests,
-        input_range=(args.input_min, args.input_max)
-    )
+    root_dir = Path(args.root).resolve()
+
+    # Load configuration
+    try:
+        config = auto_load_config(root_dir, args.config)
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        return 1
+    except ValueError as e:
+        print(f"Configuration error: {e}")
+        return 1
 
     print("=" * 60)
     print("Testbench Generation")
     print("=" * 60)
-    
+
+    tb_dir = root_dir / "testbench"
+
     # Generate activation function testbench
     print("\n[1/3] Generating activation function testbench...")
-    generate_activation_func_tb(config)
-    
+    generate_activation_func_tb(
+        config.sigmoid, config.int_bits, config.frac_bits,
+        args.num_tests, str(tb_dir / "activation_func_tb.vhd")
+    )
+
     # Generate neuron testbench
     print("\n[2/3] Generating neuron testbench...")
-    generate_neuron_tb(config)
-    
+    generate_neuron_tb(
+        config.sigmoid, config.int_bits, config.frac_bits,
+        str(tb_dir / "neuron_tb.vhd")
+    )
+
     # Generate layer testbench
     print("\n[3/3] Generating layer testbench...")
-    generate_layer_tb(config)
+    generate_layer_tb(
+        config.sigmoid, config.int_bits, config.frac_bits,
+        str(tb_dir / "layer_tb.vhd")
+    )
 
     print("\n" + "=" * 60)
     print("Testbench Generation Complete!")
     print("=" * 60)
+    return 0
+
+    print("\n" + "=" * 60)
+    print("Testbench Generation Complete!")
+    print("=" * 60)
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
