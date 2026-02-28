@@ -1,7 +1,9 @@
-tensorflow>=2.15.0
 numpy>=1.24.0
 onnx>=1.14.0
 networkx>=3.0
 matplotlib>=3.7.0
 pyyaml>=6.0
 jsonschema>=4.0
+# Optional: for training models (MNIST/timeseries harnesses)
+# torch>=2.0.0
+# torchvision>=0.15.0

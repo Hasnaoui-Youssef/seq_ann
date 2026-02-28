@@ -176,25 +176,33 @@ def main():
     # If ONNX model provided, parse it and export weights
     parsed_network = None
     if args.model:
-        from onnx_parser import parse_onnx, print_network_summary, export_weights_hex
+        from onnx_parser import (
+            parse_onnx, print_network_summary, export_weights_hex,
+            DenseLayerInfo, ConvLayerInfo, PoolLayerInfo, FlattenLayerInfo, RNNLayerInfo,
+        )
 
         print(f"\nParsing ONNX model: {args.model}")
         parsed_network = parse_onnx(args.model)
         print_network_summary(parsed_network)
 
-        # Override network config from ONNX model
+        # Override network config from ONNX model (dense layers only for now)
         from config.loader import NetworkConfig, DenseLayerConfig
 
-        config.network = NetworkConfig(
-            name=parsed_network.name,
-            layers=[
-                DenseLayerConfig(
-                    neurons=layer.num_outputs,
-                    activation=layer.activation if layer.activation != "none" else "sigmoid",
+        dense_layers = []
+        for layer in parsed_network.layers:
+            if isinstance(layer, DenseLayerInfo):
+                dense_layers.append(
+                    DenseLayerConfig(
+                        neurons=layer.num_outputs,
+                        activation=layer.activation if layer.activation != "none" else "sigmoid",
+                    )
                 )
-                for layer in parsed_network.layers
-            ],
-        )
+
+        if dense_layers:
+            config.network = NetworkConfig(
+                name=parsed_network.name,
+                layers=dense_layers,
+            )
 
         # Export weights
         print("\n  Exporting weights...")
