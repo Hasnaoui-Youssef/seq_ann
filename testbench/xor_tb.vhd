@@ -145,18 +145,18 @@ begin
         wait for CLK_PERIOD * 2;
 
         report "Loading Weights...";
-        -- Memory layout: inputs at 0-1, weights at 2+
-        -- Layer 0 (3 neurons, 2 inputs + bias each) = 9 weights at addr 2-10
+        -- Memory layout: inputs at 0-1, targets at 2, weights at 3+
+        -- Layer 0 (3 neurons, 2 inputs + bias each) = 9 weights at addr 3-11
         -- N0 (OR-like): w=[10, 10], b=-5
-        write_mem(2, 10.0); write_mem(3, 10.0); write_mem(4, -5.0);
+        write_mem(3, 10.0); write_mem(4, 10.0); write_mem(5, -5.0);
         -- N1 (NAND-like): w=[-10, -10], b=15
-        write_mem(5, -10.0); write_mem(6, -10.0); write_mem(7, 15.0);
+        write_mem(6, -10.0); write_mem(7, -10.0); write_mem(8, 15.0);
         -- N2 (Unused/Zero): w=[0, 0], b=0
-        write_mem(8, 0.0); write_mem(9, 0.0); write_mem(10, 0.0);
+        write_mem(9, 0.0); write_mem(10, 0.0); write_mem(11, 0.0);
 
-        -- Layer 1 (1 neuron, 3 inputs + bias) = 4 weights at addr 11-14
+        -- Layer 1 (1 neuron, 3 inputs + bias) = 4 weights at addr 12-15
         -- N0 (AND-like): w=[10, 10, 0], b=-15
-        write_mem(11, 10.0); write_mem(12, 10.0); write_mem(13, 0.0); write_mem(14, -15.0);
+        write_mem(12, 10.0); write_mem(13, 10.0); write_mem(14, 0.0); write_mem(15, -15.0);
 
         report "Weights Loaded. Triggering Weight Load...";
 

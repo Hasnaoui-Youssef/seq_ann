@@ -3,6 +3,7 @@ use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 use work.types.all;
 use work.pkg_layer.all;
+use IEEE.fixed_pkg.all;
 
 entity calculation_unit is
     generic (
@@ -18,7 +19,7 @@ entity calculation_unit is
         -- Control Interface
         load_weights : in std_logic;
         start        : in std_logic;  -- Start inference (weights must be loaded)
-        mode         : in std_logic;  -- '0' = Forward, '1' = Backward
+        mode         : in std_logic;  -- '0' = Forward only, '1' = Forward + Backward + Update
         start_store  : in std_logic;
 
         -- Status
@@ -30,9 +31,8 @@ entity calculation_unit is
         output_data  : out std_logic_bus_array(0 to LAYER_SIZES(LAYER_SIZES'high) - 1)(DATA_WIDTH - 1 downto 0);
         output_valid : out std_logic;
 
-        -- Network Error Inputs (Backward)
-        error_in       : in std_logic_vector(DATA_WIDTH - 1 downto 0);
-        error_in_valid : in std_logic;
+        -- Training parameters
+        learning_rate : in std_logic_vector(DATA_WIDTH - 1 downto 0);
 
         -- Memory Interface
         mem_read_req   : out std_logic;
@@ -68,11 +68,48 @@ architecture rtl of calculation_unit is
         return max_size;
     end function;
 
+    -- Error computation: output - target (for MSE loss gradient)
+    function compute_error(
+        output_val : std_logic_vector;
+        target_val : std_logic_vector
+    ) return std_logic_vector is
+        variable out_sf : sfixed_bus;
+        variable tgt_sf : sfixed_bus;
+        variable err_sf : sfixed_bus;
+    begin
+        out_sf := to_sfixed(output_val, INT_BITS - 1, -FRAC_BITS);
+        tgt_sf := to_sfixed(target_val, INT_BITS - 1, -FRAC_BITS);
+        err_sf := resize(out_sf - tgt_sf, INT_BITS - 1, -FRAC_BITS);
+        return to_std_logic_vector(err_sf);
+    end function;
+
     constant MAX_SIZE      : integer := max_layer_size;
     constant NUM_OUTPUTS   : integer := LAYER_SIZES(LAYER_SIZES'high);
 
-    -- Memory layout: inputs at 0..NUM_INPUTS-1, weights at NUM_INPUTS..NUM_INPUTS+TOTAL_WEIGHTS-1
-    constant WEIGHT_BASE_ADDR : integer := NUM_INPUTS;
+    -- Compute total weight count across all layers for memory layout
+    function total_weight_count return integer is
+        variable total : integer := 0;
+        variable layer_inputs : integer;
+    begin
+        for i in LAYER_SIZES'range loop
+            if i = LAYER_SIZES'low then
+                layer_inputs := NUM_INPUTS;
+            else
+                layer_inputs := LAYER_SIZES(i - 1);
+            end if;
+            total := total + (layer_inputs + 1) * LAYER_SIZES(i);
+        end loop;
+        return total;
+    end function;
+
+    constant TOTAL_WEIGHTS : integer := total_weight_count;
+
+    -- Memory layout:
+    --   [0..NUM_INPUTS-1]                                      : Input data
+    --   [NUM_INPUTS..NUM_INPUTS+NUM_OUTPUTS-1]                 : Target data (training)
+    --   [NUM_INPUTS+NUM_OUTPUTS..NUM_INPUTS+NUM_OUTPUTS+TW-1]  : Weights
+    constant TARGET_BASE_ADDR : integer := NUM_INPUTS;
+    constant WEIGHT_BASE_ADDR : integer := NUM_INPUTS + NUM_OUTPUTS;
 
     type ctrl_array_t is array (0 to NUM_LAYERS) of layer_control_t;
     type data_array_t is array (0 to NUM_LAYERS) of std_logic_bus_array(0 to MAX_SIZE - 1)(DATA_WIDTH - 1 downto 0);
@@ -102,14 +139,18 @@ architecture rtl of calculation_unit is
         FETCH_INPUTS_WAIT,      -- Wait for input data
         FORWARD_START,          -- Trigger forward pass
         FORWARD_WAIT,           -- Wait for forward pass completion
-        STORE_GRADIENTS,        -- Store gradients to memory (training)
+        LOAD_TARGET_REQ,        -- Request target from memory (training)
+        LOAD_TARGET_WAIT,       -- Wait for target data
+        BACKWARD_START,         -- Inject error and trigger backward pass
+        BACKWARD_WAIT,          -- Wait for backward pass completion
+        UPDATE_WEIGHTS,         -- Trigger weight bank updates
+        UPDATE_WEIGHTS_WAIT,    -- Wait for weight updates to complete
         DONE_STATE              -- Signal completion
     );
     signal state : state_t := IDLE;
 
     -- Counters and indices
     signal fetch_idx : integer := 0;
-    signal store_idx : integer := 0;
     signal current_layer : integer range 0 to NUM_LAYERS - 1 := 0;
     signal layer_weight_idx : integer := 0;
 
@@ -121,9 +162,24 @@ architecture rtl of calculation_unit is
         := (others => (others => '0'));
     signal output_valid_reg : std_logic := '0';
 
+    -- Target buffer for training
+    signal target_buffer : std_logic_bus_array(0 to NUM_OUTPUTS - 1)(DATA_WIDTH - 1 downto 0)
+        := (others => (others => '0'));
+
+    -- Weight update control signals
+    signal layer_weight_update_en   : std_logic_vector(0 to NUM_LAYERS - 1) := (others => '0');
+    signal layer_weight_update_done : std_logic_vector(0 to NUM_LAYERS - 1);
+
+    -- Backward pass completion
+    signal bwd_complete : std_logic := '0';
+
+    -- Phase control: during training, forward phase first, then backward phase
+    signal in_backward_phase : std_logic := '0';
+
 begin
 
     fwd_complete <= fwd_ctrl(NUM_LAYERS).valid;
+    bwd_complete <= bwd_ctrl(0).valid;
 
     weights_loaded <= weights_loaded_reg;
 
@@ -147,7 +203,6 @@ begin
                 mem_update_addr <= 0;
                 mem_update_grad <= (others => '0');
                 fetch_idx <= 0;
-                store_idx <= 0;
                 current_layer <= 0;
                 layer_weight_idx <= 0;
                 ready <= '0';
@@ -155,16 +210,23 @@ begin
                 weights_loaded_reg <= '0';
                 fwd_ctrl(0).valid <= '0';
                 fwd_ctrl(0).last <= '0';
+                bwd_ctrl(NUM_LAYERS).valid <= '0';
+                bwd_ctrl(NUM_LAYERS).last <= '0';
+                bwd_data(NUM_LAYERS) <= (others => (others => '0'));
                 input_buffer <= (others => (others => '0'));
+                target_buffer <= (others => (others => '0'));
                 output_data_reg <= (others => (others => '0'));
                 output_valid_reg <= '0';
                 mode_latched <= '0';
+                in_backward_phase <= '0';
             else
                 -- Default assignments
                 mem_read_req <= '0';
                 mem_update_en <= '0';
                 fwd_ctrl(0).valid <= '0';
                 fwd_ctrl(0).last <= '0';
+                bwd_ctrl(NUM_LAYERS).valid <= '0';
+                bwd_ctrl(NUM_LAYERS).last <= '0';
 
                 case state is
                     when IDLE =>
@@ -260,21 +322,67 @@ begin
                                 output_data_reg(i) <= fwd_data(NUM_LAYERS)(i);
                             end loop;
                             output_valid_reg <= '1';
-                            if mode_latched = '1' and start_store = '1' then
-                                store_idx <= 0;
-                                state <= STORE_GRADIENTS;
+                            if mode_latched = '1' then
+                                -- Training: load targets next
+                                fetch_idx <= 0;
+                                state <= LOAD_TARGET_REQ;
                             else
                                 state <= DONE_STATE;
                             end if;
                         end if;
 
-                    when STORE_GRADIENTS =>
-                        -- TODO: Implement gradient storage
-                        state <= DONE_STATE;
+                    when LOAD_TARGET_REQ =>
+                        mem_read_addr <= TARGET_BASE_ADDR + fetch_idx;
+                        mem_read_req <= '1';
+                        state <= LOAD_TARGET_WAIT;
+
+                    when LOAD_TARGET_WAIT =>
+                        if mem_read_valid = '1' then
+                            target_buffer(fetch_idx) <= mem_read_data;
+                            if fetch_idx = NUM_OUTPUTS - 1 then
+                                state <= BACKWARD_START;
+                            else
+                                fetch_idx <= fetch_idx + 1;
+                                state <= LOAD_TARGET_REQ;
+                            end if;
+                        end if;
+
+                    when BACKWARD_START =>
+                        -- Compute error = output - target for each output neuron
+                        -- and inject into last layer's backward path
+                        in_backward_phase <= '1';
+                        for i in 0 to NUM_OUTPUTS - 1 loop
+                            bwd_data(NUM_LAYERS)(i) <= compute_error(
+                                output_data_reg(i), target_buffer(i));
+                        end loop;
+                        bwd_ctrl(NUM_LAYERS).valid <= '1';
+                        bwd_ctrl(NUM_LAYERS).last <= '1';
+                        state <= BACKWARD_WAIT;
+
+                    when BACKWARD_WAIT =>
+                        -- Clear backward injection after one cycle
+                        bwd_ctrl(NUM_LAYERS).valid <= '0';
+                        bwd_ctrl(NUM_LAYERS).last <= '0';
+                        if bwd_complete = '1' then
+                            state <= UPDATE_WEIGHTS;
+                        end if;
+
+                    when UPDATE_WEIGHTS =>
+                        -- Trigger in-place weight update on all layers
+                        layer_weight_update_en <= (others => '1');
+                        state <= UPDATE_WEIGHTS_WAIT;
+
+                    when UPDATE_WEIGHTS_WAIT =>
+                        layer_weight_update_en <= (others => '0');
+                        -- Wait for all layers to finish updating
+                        if layer_weight_update_done = (layer_weight_update_done'range => '1') then
+                            state <= DONE_STATE;
+                        end if;
 
                     when DONE_STATE =>
                         done <= '1';
                         ready <= '0';
+                        in_backward_phase <= '0';
                         state <= WEIGHTS_READY;
 
                     when others =>
@@ -300,8 +408,8 @@ begin
             port map (
                 clk => clk,
                 rst => rst,
-                fwd_en => not mode_latched,
-                bwd_en => mode_latched,
+                fwd_en => not in_backward_phase,
+                bwd_en => in_backward_phase,
                 fwd_ctrl_in => fwd_ctrl(i),
                 fwd_data_in => fwd_data(i)(0 to THIS_INPUT_SIZE - 1),
                 fwd_ctrl_out => fwd_ctrl(i + 1),
@@ -317,18 +425,14 @@ begin
                 weight_save_en => '0',
                 weight_save_data => open,
                 weight_save_done => open,
-                weight_update_en => '0',
-                weight_learn_rate => (others => '0'),
-                weight_update_done => open,
+                weight_update_en => layer_weight_update_en(i),
+                weight_learn_rate => learning_rate,
+                weight_update_done => layer_weight_update_done(i),
                 grads_out => layer_grads
             );
     end generate;
 
     output_valid <= output_valid_reg;
     output_data  <= output_data_reg;
-
-    bwd_ctrl(NUM_LAYERS).valid <= '0';
-    bwd_ctrl(NUM_LAYERS).last <= '0';
-    bwd_data(NUM_LAYERS) <= (others => (others => '0'));
 
 end architecture rtl;

@@ -28,17 +28,10 @@ end entity control_unit;
 
 architecture rtl of control_unit is
 
-    type state_t is (IDLE, TRAIN_EPOCH_START, TRAIN_SAMPLE_START, TRAIN_FWD, TRAIN_BWD, TRAIN_UPDATE, PREDICT_FWD, FINISHED);
+    type state_t is (IDLE, TRAIN_FWD, PREDICT_FWD, FINISHED);
     signal state : state_t := IDLE;
 
-    constant DEFAULT_LR : std_logic_vector(DATA_WIDTH - 1 downto 0) := x"00001999"; -- 0.1 in 16.16 fixed point (approx)
-
-    -- Training Loop Counters (Hardcoded for now, should be configurable)
-    constant MAX_EPOCHS : integer := 10;
-    constant SAMPLES_PER_EPOCH : integer := 4; -- XOR has 4 samples
-
-    signal epoch_counter : integer := 0;
-    signal sample_counter : integer := 0;
+    constant DEFAULT_LR : std_logic_vector(DATA_WIDTH - 1 downto 0) := x"00010000"; -- 1.0 in Q16.16
 
 begin
 
@@ -67,8 +60,9 @@ begin
                     if start = '1' then
                         ready <= '0';
                         if train_mode = '1' then
-                            state <= TRAIN_EPOCH_START;
-                            epoch_counter <= 0;
+                            state <= TRAIN_FWD;
+                            calc_mode <= '1'; -- Training (forward + backward + update)
+                            calc_start <= '1';
                         else
                             state <= PREDICT_FWD;
                             calc_mode <= '0';
@@ -76,50 +70,12 @@ begin
                         end if;
                     end if;
 
-                when TRAIN_EPOCH_START =>
-                    if epoch_counter < MAX_EPOCHS then
-                        state <= TRAIN_SAMPLE_START;
-                        sample_counter <= 0;
-                    else
-                        state <= FINISHED;
-                    end if;
-
-                when TRAIN_SAMPLE_START =>
-                    if sample_counter < SAMPLES_PER_EPOCH then
-                        state <= TRAIN_FWD;
-                        calc_mode <= '0'; -- Forward
-                        calc_start <= '1';
-                    else
-                        epoch_counter <= epoch_counter + 1;
-                        state <= TRAIN_EPOCH_START;
-                    end if;
-
                 when TRAIN_FWD =>
-                    -- Same handshake as PREDICT_FWD: clear calc_start first,
-                    -- then wait for calc_done to avoid stale calc_done from
-                    -- previous computation triggering immediate transition.
+                    -- Calc unit handles full training step when mode='1'
                     if calc_start = '1' then
                         calc_start <= '0';
                     elsif calc_done = '1' then
-                        state <= TRAIN_BWD;
-                        calc_mode <= '1'; -- Backward
-                        calc_start <= '1';
-                    end if;
-
-                when TRAIN_BWD =>
-                    if calc_start = '1' then
-                        calc_start <= '0';
-                    elsif calc_done = '1' then
-                        state <= TRAIN_UPDATE;
-                        calc_store <= '1';
-                    end if;
-
-                when TRAIN_UPDATE =>
-                    calc_store <= '0';
-                    if calc_ready = '1' then
-                        -- Sample Done
-                        sample_counter <= sample_counter + 1;
-                        state <= TRAIN_SAMPLE_START;
+                        state <= FINISHED;
                     end if;
 
                 when PREDICT_FWD =>
