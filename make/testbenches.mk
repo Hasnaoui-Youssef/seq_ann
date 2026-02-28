@@ -1,6 +1,5 @@
 # Testbench targets
 
-# Configurable variables
 WORKDIR ?= work
 TESTBENCH ?= activation_func
 TESTBENCHFILE ?= testbench/$(TESTBENCH)_tb.vhd

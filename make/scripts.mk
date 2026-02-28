@@ -4,9 +4,8 @@ PYTHON = .venv/bin/python
 # Configuration file (searches for *.nn_conf.yaml in root, falls back to configs/default.nn_conf.yaml)
 CONFIG ?=
 
-# Python script parameters (legacy, kept for backward compatibility with gen_testbenches.py)
+# Python script parameters
 NUM_TESTS ?= 10
-LAYERS ?= 4,3,2
 
 # Config argument helper
 ifdef CONFIG
@@ -15,9 +14,14 @@ else
 CONFIG_ARG =
 endif
 
-.PHONY: generate generate-pkg generate-tb generate-nn-tb generate-xor-tb
+.PHONY: configure generate generate-pkg generate-tb
 
-generate: generate-pkg generate-tb
+# Unified configure: generates all VHDL packages and testbenches from YAML config
+configure:
+	@$(PYTHON) scripts/configure.py $(CONFIG_ARG) --num-tests $(NUM_TESTS)
+
+# Legacy targets (call unified configure or individual scripts)
+generate: configure
 
 generate-pkg:
 	@echo "Generating sigmoid LUT package..."
@@ -27,16 +31,3 @@ generate-tb:
 	@echo "Generating testbenches..."
 	@$(PYTHON) scripts/gen_testbenches.py $(CONFIG_ARG) \
 		--num-tests $(NUM_TESTS)
-
-generate-nn-tb:
-	@echo "Generating neural network testbench..."
-	@$(PYTHON) scripts/gen_neural_network.py $(CONFIG_ARG) \
-		--create-model \
-		--layers $(LAYERS) \
-		--num-tests $(NUM_TESTS)
-
-generate-xor-tb:
-	@echo "Generating XOR testbench..."
-	@$(PYTHON) scripts/gen_neural_network.py $(CONFIG_ARG) \
-		--xor \
-		--output testbench/xor_tb.vhd

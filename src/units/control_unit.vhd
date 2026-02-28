@@ -76,7 +76,6 @@ begin
                         end if;
                     end if;
 
-                -- Training Loop States
                 when TRAIN_EPOCH_START =>
                     if epoch_counter < MAX_EPOCHS then
                         state <= TRAIN_SAMPLE_START;
@@ -91,24 +90,28 @@ begin
                         calc_mode <= '0'; -- Forward
                         calc_start <= '1';
                     else
-                        -- End of Epoch
                         epoch_counter <= epoch_counter + 1;
                         state <= TRAIN_EPOCH_START;
                     end if;
 
                 when TRAIN_FWD =>
-                    calc_start <= '0';
-                    if calc_done = '1' then
+                    -- Same handshake as PREDICT_FWD: clear calc_start first,
+                    -- then wait for calc_done to avoid stale calc_done from
+                    -- previous computation triggering immediate transition.
+                    if calc_start = '1' then
+                        calc_start <= '0';
+                    elsif calc_done = '1' then
                         state <= TRAIN_BWD;
                         calc_mode <= '1'; -- Backward
                         calc_start <= '1';
                     end if;
 
                 when TRAIN_BWD =>
-                    calc_start <= '0';
-                    if calc_done = '1' then
+                    if calc_start = '1' then
+                        calc_start <= '0';
+                    elsif calc_done = '1' then
                         state <= TRAIN_UPDATE;
-                        calc_store <= '1'; -- Trigger gradient storage
+                        calc_store <= '1';
                     end if;
 
                 when TRAIN_UPDATE =>
@@ -130,7 +133,6 @@ begin
 
                 when FINISHED =>
                     done <= '1';
-                    -- Wait for start to deassert before going to IDLE
                     if start = '0' then
                         state <= IDLE;
                     end if;

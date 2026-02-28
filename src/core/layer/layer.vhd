@@ -22,14 +22,14 @@ entity layer is
         -- Forward Interface
         fwd_ctrl_in  : in layer_control_t;
         fwd_data_in  : in std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
-        
+
         fwd_ctrl_out : out layer_control_t;
         fwd_data_out : out std_logic_bus_array(0 to LAYER_SIZE - 1)(DATA_WIDTH - 1 downto 0);
 
         -- Backward Interface
         bwd_ctrl_in  : in layer_control_t;
         bwd_error_in : in std_logic_bus_array(0 to LAYER_SIZE - 1)(DATA_WIDTH - 1 downto 0);
-        
+
         bwd_ctrl_out : out layer_control_t;
         bwd_error_out: out std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
 
@@ -46,7 +46,7 @@ entity layer is
         weight_update_en   : in  std_logic;
         weight_learn_rate  : in  std_logic_vector(DATA_WIDTH - 1 downto 0);
         weight_update_done : out std_logic;
-        
+
         -- Gradients Output (for external use if needed)
         grads_out : out std_logic_bus_array(0 to (NUM_INPUTS + 1) * LAYER_SIZE - 1)(DATA_WIDTH - 1 downto 0)
     );
@@ -54,23 +54,17 @@ end entity layer;
 
 architecture rtl of layer is
 
-    -- Weight count for this layer
     constant NUM_WEIGHTS : integer := (NUM_INPUTS + 1) * LAYER_SIZE;
 
-    -- Internal Signals
     signal neuron_outputs : std_logic_bus_array(0 to LAYER_SIZE - 1)(DATA_WIDTH - 1 downto 0);
-    
-    -- Weights from weight bank (directly connected to neurons)
+
     signal weights_internal : std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
 
-    -- Gradients collected from neurons
     signal grads_internal : std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
-    
-    -- Input Error Accumulator (dL/dx sum from all neurons)
+
     type input_grad_array is array (0 to LAYER_SIZE - 1) of std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
     signal input_grads : input_grad_array;
 
-    -- Helper to sum gradients for a specific input across all neurons
     function sum_input_grads(input_idx : integer; grads : input_grad_array) return std_logic_vector is
         variable sum : sfixed_bus := (others => '0');
         variable val : sfixed_bus;
@@ -84,7 +78,6 @@ architecture rtl of layer is
 
 begin
 
-    -- Instantiate Weight Bank
     u_weight_bank: entity work.weight_bank
         generic map (
             NUM_WEIGHTS => NUM_WEIGHTS
@@ -107,14 +100,13 @@ begin
             save_idx => open
         );
 
-    -- Pass through control signals with pipeline delay
     process(clk)
     begin
         if rising_edge(clk) then
             if rst = '1' then
                 fwd_ctrl_out.valid <= '0';
                 fwd_ctrl_out.last <= '0';
-                bwd_ctrl_out.valid <= '0'; 
+                bwd_ctrl_out.valid <= '0';
                 bwd_ctrl_out.last <= '0';
             else
                 fwd_ctrl_out <= fwd_ctrl_in;
@@ -122,35 +114,30 @@ begin
             end if;
         end if;
     end process;
-    
+
     fwd_data_out <= neuron_outputs;
     grads_out <= grads_internal;
 
-    -- Instantiate Neurons
     gen_neurons: for i in 0 to LAYER_SIZE - 1 generate
-        -- Slice weights for this neuron: [w0..wN, bias]
         constant w_start : integer := i * (NUM_INPUTS + 1);
-        
+
         signal n_weights : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
         signal n_bias    : std_logic_vector(DATA_WIDTH - 1 downto 0);
-        
+
         signal n_grad_weights : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
         signal n_grad_bias    : std_logic_vector(DATA_WIDTH - 1 downto 0);
-        
+
     begin
-        -- Assign Weights from weight bank
         assign_w: for j in 0 to NUM_INPUTS - 1 generate
             n_weights(j) <= weights_internal(w_start + j);
         end generate;
         n_bias <= weights_internal(w_start + NUM_INPUTS);
 
-        -- Assign Gradients to internal array (for weight bank update)
         assign_g: for j in 0 to NUM_INPUTS - 1 generate
             grads_internal(w_start + j) <= n_grad_weights(j);
         end generate;
         grads_internal(w_start + NUM_INPUTS) <= n_grad_bias;
 
-        -- Neuron Instance
         u_neuron: entity work.neuron
             generic map (
                 NUM_INPUTS => NUM_INPUTS,

@@ -8,19 +8,20 @@ entity neural_network is
     generic(
         NUM_INPUTS  : integer := 2;
         NUM_LAYERS  : integer := 2;
-        LAYER_SIZES : layer_config_array  -- e.g., (3, 1) for hidden=3, output=1
+        LAYER_SIZES : layer_config_array;  -- e.g., (3, 1) for hidden=3, output=1
+        USE_SIGMOID : boolean_array        -- Per-layer activation: true=sigmoid, false=relu
     );
     port (
         clk : in std_logic;
         rst : in std_logic;
 
         -- Control Interface
-        load_weights : in std_logic;   -- Trigger weight loading from memory
-        start        : in std_logic;   -- Start inference (weights must be loaded)
+        load_weights : in std_logic;
+        start        : in std_logic;
         train_mode   : in std_logic;
 
         -- Status
-        weights_loaded : out std_logic;  -- Weights are loaded
+        weights_loaded : out std_logic;
         ready          : out std_logic;
         done           : out std_logic;
 
@@ -29,8 +30,8 @@ entity neural_network is
         host_addr     : in integer;
         host_data     : in std_logic_vector(DATA_WIDTH - 1 downto 0);
 
-        -- Output Interface
-        output_data  : out std_logic_vector(DATA_WIDTH - 1 downto 0);
+        -- Output Interface - sized by last layer
+        output_data  : out std_logic_bus_array(0 to LAYER_SIZES(LAYER_SIZES'high) - 1)(DATA_WIDTH - 1 downto 0);
         output_valid : out std_logic
     );
 end entity neural_network;
@@ -58,10 +59,8 @@ architecture rtl of neural_network is
 
 begin
 
-    -- Status outputs
     weights_loaded <= calc_weights_loaded;
 
-    -- Control Unit
     u_control : entity work.control_unit
         port map (
             clk => clk,
@@ -78,7 +77,6 @@ begin
             learning_rate => learning_rate
         );
 
-    -- Memory Control Unit
     u_mem : entity work.memory_control_unit
         port map (
             clk => clk,
@@ -96,12 +94,12 @@ begin
             learning_rate => learning_rate
         );
 
-    -- Calculation Unit
     u_calc : entity work.calculation_unit
         generic map (
             NUM_INPUTS  => NUM_INPUTS,
             NUM_LAYERS  => NUM_LAYERS,
-            LAYER_SIZES => LAYER_SIZES
+            LAYER_SIZES => LAYER_SIZES,
+            USE_SIGMOID => USE_SIGMOID
         )
         port map (
             clk => clk,

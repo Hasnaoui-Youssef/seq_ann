@@ -2,7 +2,12 @@
 standard = "2008"
 # File names are either absolute or relative to the parent folder of the vhdl_ls.toml file
 [libraries]
-micro.files = [
+source.files = [
+    'src/memory/*.vhd',
+    'src/units/*.vhd',
+    'src/packages/*.vhd',
+    'src/top/*.vhd',
+    'src/core/*/*.vhd',
     'src/*.vhd',
     'testbench/*.vhd',
 ]

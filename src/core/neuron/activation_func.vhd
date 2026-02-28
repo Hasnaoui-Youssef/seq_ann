@@ -17,11 +17,6 @@ entity activation_func is
     );
 end entity activation_func;
 
--- architecture relu of activation_func is
--- begin
---     output_o <= to_sfixed(input_i, output_o) when signed(input_i) >= 0 else to_sfixed_a(0);
--- end architecture relu;
-
 architecture sigmoid of activation_func is
     -- Input integer bits (derived from input width and frac width)
     constant INPUT_INT_BITS : integer := input_width - FRAC_BITS;
@@ -80,33 +75,15 @@ begin
 
 end architecture sigmoid;
 
--- architecture clamped_relu of activation_func is
---     constant MAX_THRESHOLD : sfixed((output_width + 1) / 2 - 1 downto -(output_width / 2)) :=
---         to_sfixed(max_value, (output_width + 1) / 2 - 1, -(output_width / 2));
---     constant ZERO : sfixed((output_width + 1) / 2 - 1 downto -(output_width / 2)) :=
---         to_sfixed(0.0, (output_width + 1) / 2 - 1, -(output_width / 2));
---
---     signal input_sfixed : sfixed(input_width - FRAC_BITS - 1 downto -FRAC_BITS);
--- begin
---     -- Startup check
---     assert false report "Clamped ReLU Architecture Instantiated" severity note;
---
---     -- Convert input to sfixed
---     input_sfixed <= to_sfixed(input_i, input_sfixed);
---
---     -- Clamped ReLU: output = clamp(input, 0, max_value)
---     process(input_sfixed)
---     begin
---         if input_sfixed < ZERO then
---             -- Below minimum: clamp to 0
---             output_o <= ZERO;
---         elsif input_sfixed > MAX_THRESHOLD then
---             -- Above maximum: clamp to max_value
---             output_o <= MAX_THRESHOLD;
---         else
---             -- Within range: pass through (resize to output width)
---             output_o <= resize(input_sfixed, output_o);
---         end if;
---     end process;
---
--- end architecture clamped_relu;
+architecture relu of activation_func is
+    constant INPUT_INT_BITS : integer := input_width - FRAC_BITS;
+    signal input_sfixed : sfixed(INPUT_INT_BITS - 1 downto -FRAC_BITS);
+    constant ZERO : sfixed_bus := to_sfixed(0.0, INT_BITS - 1, -FRAC_BITS);
+begin
+    input_sfixed <= to_sfixed(input_i, input_sfixed);
+
+    -- ReLU: max(0, x) with saturating resize from accumulator width to data width
+    output_o <= ZERO when input_sfixed < 0 else
+                resize(input_sfixed, INT_BITS - 1, -FRAC_BITS,
+                       fixed_saturate, fixed_truncate);
+end architecture relu;

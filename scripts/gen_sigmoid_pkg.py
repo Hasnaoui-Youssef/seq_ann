@@ -59,7 +59,7 @@ def generate_vhdl_lut_package(
     int_bits: int,
     frac_bits: int,
     lut: list,
-    output_file: str = "src/sigmoid_lut_pkg.vhd"
+    output_file: str = "src/packages/sigmoid_lut_pkg.vhd"
 ):
     """Generate VHDL package file for sigmoid LUT."""
     high_bit = sigmoid_config.index_high
@@ -167,7 +167,7 @@ def main():
 
     # Generate VHDL LUT package
     print("\n[2/2] Generating VHDL LUT package...")
-    output_file = root_dir / "src" / "sigmoid_lut_pkg.vhd"
+    output_file = root_dir / "src" / "packages" / "sigmoid_lut_pkg.vhd"
     generate_vhdl_lut_package(config.sigmoid, config.int_bits, config.frac_bits, lut, str(output_file))
 
     # Update Makefile

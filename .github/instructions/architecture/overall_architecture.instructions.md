@@ -15,8 +15,8 @@ This document outlines the key design principles and guidelines for assisting wi
   - No additional scaling or shifting is applied during conversion
 - **Entity usage** We are aiming to create a modular project, therefore:
   - If we are going to use a logic block, we first check if a component doing that already exists.
-  - We try and make a separation of concers, for example, a neuron will always contain an accumulator and an activation function.
-  - If things are broken within a component, we fix that, or we create a new architecture to accomodate for our different use case, but architecture creation should be a last resort and you are to prompt me if doing so explaining in as much details as possible what's wrong with the current one and why fixing it alone won't work.
+  - We try and make a separation of concerns, for example, a neuron will always contain an accumulator and an activation function.
+  - If things are broken within a component, we fix that, or we create a new architecture to accommodate for our different use case, but architecture creation should be a last resort and you are to prompt me if doing so explaining in as much details as possible what's wrong with the current one and why fixing it alone won't work.
 
 ### Implementation Notes
 - Maintain fractional bit alignment throughout arithmetic operations

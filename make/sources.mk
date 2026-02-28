@@ -1,7 +1,6 @@
-# Source files (sorted by dependency)
-FILES = src/types.vhd \
-        src/core/layer/pkg_layer.vhd \
-        src/core/sigmoid/sigmoid_lut_pkg.vhd \
+FILES = src/packages/types.vhd \
+        src/packages/pkg_layer.vhd \
+        src/packages/sigmoid_lut_pkg.vhd \
         src/core/accumulator/half_adder.vhd \
         src/core/accumulator/signed_mult.vhd \
         src/core/neuron/activation_func.vhd \

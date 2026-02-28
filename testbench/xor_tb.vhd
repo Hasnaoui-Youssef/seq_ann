@@ -19,6 +19,7 @@ architecture testbench of xor_tb is
     constant NUM_INPUTS : integer := 2;
     constant NUM_LAYERS : integer := 2;
     constant LAYER_SIZES : layer_config_array(0 to 1) := (3, 1);
+    constant ACTIVATIONS : boolean_array(0 to 1) := (true, true);  -- sigmoid for all layers
 
     -- Signals
     signal clk : std_logic := '0';
@@ -36,7 +37,7 @@ architecture testbench of xor_tb is
     signal host_data : std_logic_vector(DATA_WIDTH - 1 downto 0) := (others => '0');
 
     -- Output Interface
-    signal output_data : std_logic_vector(DATA_WIDTH - 1 downto 0);
+    signal output_data : std_logic_bus_array(0 to 0)(DATA_WIDTH - 1 downto 0);
     signal output_valid : std_logic;
 
     -- Helper to convert real to std_logic_vector
@@ -67,7 +68,8 @@ begin
         generic map (
             NUM_INPUTS  => NUM_INPUTS,
             NUM_LAYERS  => NUM_LAYERS,
-            LAYER_SIZES => LAYER_SIZES
+            LAYER_SIZES => LAYER_SIZES,
+            USE_SIGMOID => ACTIVATIONS
         )
         port map (
             clk => clk,
@@ -128,10 +130,10 @@ begin
             wait until done = '1';
 
             report "Input: " & real'image(in1) & ", " & real'image(in2) &
-                   " | Output: " & real'image(to_real_val(output_data)) &
+                   " | Output: " & real'image(to_real_val(output_data(0))) &
                    " | Expected: " & real'image(expected);
 
-            assert abs(to_real_val(output_data) - expected) < TOLERANCE_C
+            assert abs(to_real_val(output_data(0)) - expected) < TOLERANCE_C
                 report "Test Failed!" severity error;
 
         end procedure;

@@ -14,7 +14,7 @@ network:
   name: random_network
   layers:
     - type: dense
-      neurons: 728
+      neurons: 784
       activation: sigmoid
 
     - type: maxpool
@@ -23,4 +23,3 @@ network:
     - type: dense
       neurons: 4
       activation: relu
-

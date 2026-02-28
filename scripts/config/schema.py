@@ -11,7 +11,7 @@ from pathlib import Path
 def _load_schema() -> dict:
     """Load the JSON schema from file."""
     schema_path = Path(__file__).parent / "schema.json"
-    with open(schema_path, 'r') as f:
+    with open(schema_path) as f:
         return json.load(f)
 
 

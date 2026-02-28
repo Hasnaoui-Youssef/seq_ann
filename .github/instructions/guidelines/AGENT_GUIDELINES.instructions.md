@@ -151,7 +151,7 @@ These constraints exist for hardware efficiency reasons.
 
 ## Architecture Notes
 
-### Current State (as of Dec 2024)
+### Current State
 
 - Basic dense layer network working (XOR demo)
 - Sigmoid activation via LUT
@@ -178,7 +178,7 @@ These constraints exist for hardware efficiency reasons.
 
 1. **Signal timing**: Remember that signal assignments in a process take effect on the NEXT clock edge. Use variables for immediate values within a process.
 
-2. **Reset handling**: Ensure all state machines and registers have proper reset behavior.
+2. **Reset handling**: Ensure all state machines and registers have proper reset behavior, and that reset propagation is taken into consideration.
 
 3. **Metavalue warnings**: Initialize all signals. Use `(others => '0')` for vectors.
 
@@ -192,6 +192,6 @@ These constraints exist for hardware efficiency reasons.
 
 ## Contact / Resources
 
-- Architecture plan: `ARCHITECTURE_PLAN.md`
-- This file: `guidelines/AGENT_GUIDELINES.md`
+- Architecture plan: `.github/instructions/architecture/overall_architecture.instructions.md`
+- This file: `.github/instructions/guidelines/AGENT_GUIDELINES.md`
 - Test with: `make test-all`

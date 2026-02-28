@@ -21,11 +21,10 @@ Create a flexible hardware neural network accelerator capable of:
 - Working XOR test demonstrating end-to-end inference
 
 ### Current Issues
-1. **Weights reloaded every inference** - wasteful, slow
+1. **No layer type abstraction** - only dense layers
 2. **Memory fetching in calculation unit** - wrong responsibility
 3. **Neurons tightly coupled to memory** - limits flexibility
 4. **No support for weight sharing** - blocks CNN implementation
-5. **No layer type abstraction** - only dense layers
 
 ---
 
@@ -58,28 +57,28 @@ Every layer type implements a common interface:
 entity layer_interface is
     port (
         clk, rst : in std_logic;
-        
+
         -- Forward path
         fwd_data_in    : in  data_bus_t;
         fwd_valid_in   : in  std_logic;
         fwd_data_out   : out data_bus_t;
         fwd_valid_out  : out std_logic;
-        
+
         -- Backward path (training)
         bwd_grad_in    : in  data_bus_t;
         bwd_valid_in   : in  std_logic;
         bwd_grad_out   : out data_bus_t;
         bwd_valid_out  : out std_logic;
-        
+
         -- Weight management
         weight_load_en   : in  std_logic;
         weight_load_data : in  std_logic_vector;
         weight_load_done : out std_logic;
-        
+
         weight_save_en   : in  std_logic;
         weight_save_data : out std_logic_vector;
         weight_save_done : out std_logic;
-        
+
         -- Configuration (set once)
         config_data : in  layer_config_t;
         config_valid: in  std_logic
@@ -124,26 +123,26 @@ entity weight_bank is
     );
     port (
         clk, rst : in std_logic;
-        
+
         -- Load weights from memory
         load_en   : in  std_logic;
         load_data : in  std_logic_vector(WEIGHT_WIDTH-1 downto 0);
         load_idx  : in  integer range 0 to NUM_WEIGHTS-1;
         load_done : out std_logic;
-        
+
         -- Read weights for forward pass (parallel access)
         read_en   : in  std_logic;
         read_data : out weight_array_t;  -- All weights available simultaneously
-        
+
         -- Gradient accumulation (backprop)
         grad_en   : in  std_logic;
         grad_data : in  weight_array_t;
         grad_idx  : in  integer;  -- For shared weights: which instance
-        
+
         -- Weight update (after accumulation)
         update_en : in  std_logic;
         learn_rate: in  std_logic_vector(WEIGHT_WIDTH-1 downto 0);
-        
+
         -- Save weights to memory
         save_en   : in  std_logic;
         save_data : out std_logic_vector(WEIGHT_WIDTH-1 downto 0);
@@ -231,7 +230,7 @@ IDLE
   │
   ├──[load_weights]──▶ LOAD_WEIGHTS ──▶ IDLE
   │
-  ├──[load_input]────▶ LOAD_INPUT ────▶ IDLE  
+  ├──[load_input]────▶ LOAD_INPUT ────▶ IDLE
   │
   ├──[inference]─────▶ RUN_FORWARD ───▶ DONE ──▶ IDLE
   │
@@ -266,7 +265,7 @@ IDLE
 6. [ ] Update `calculation_unit` to only handle forward pass orchestration
 7. [ ] Test: Load weights once, run multiple inferences
 
-**Success Criteria**: 
+**Success Criteria**:
 - Weights loaded once after reset
 - Multiple inferences without reloading weights
 - XOR test still passes
@@ -325,26 +324,23 @@ IDLE
 
 ## Design Rules & Decisions
 
-### Resolved Questions
-
-1. **Parallelism level for Conv2D**: 
-   - **Decision**: Configurable number of kernel positions executed in parallel
+1. **Parallelism level for Conv2D**:
+   - Configurable number of kernel positions executed in parallel
    - Configured via Python scripts at generation time
    - Allows trade-off between area and throughput per deployment target
 
 2. **Batch support**:
-   - **Decision**: Yes, mini-batch support will be implemented
+   - Mini-batch support will be implemented
    - Enables efficient training with gradient averaging
    - Batch size configurable
 
 3. **Fixed-point precision**:
-   - **Decision**: Configurable via Python scripts
+   - Configurable via Python scripts
    - INT_BITS and FRAC_BITS set at generation time
-   - Allows tuning for accuracy vs resource usage
 
 4. **Memory interface**:
-   - **Decision**: Simple BRAM for now
-   - **Future**: Redesign for SoC integration with NoC
+   - Simple BRAM for now
+   - Redesign for SoC integration with NoC later
    - Will need to interface with shared memory via Network-on-Chip
    - Target: Coordination between CPUs, ANN accelerators, and shared memory
 
@@ -361,30 +357,21 @@ IDLE
    - Weight bank: weight storage and updates
    - Compute units: pure computation
    - Control unit: orchestration
-
-## Open Questions (Remaining)
-
-1. **Activation function placement**: In neuron or as separate layer?
-2. **Gradient checkpointing**: Store all activations or recompute?
-3. **NoC interface protocol**: AXI? Custom? (for future SoC integration)
-
 ---
 
 ## File Structure (Proposed)
 
-```
+```text
 src/
 ├── packages/
 │   ├── types.vhd              # Basic types
 │   ├── layer_pkg.vhd          # Layer interface definitions
 │   └── nn_config_pkg.vhd      # Network configuration types
 ├── core/
-│   ├── mac.vhd                # Multiply-accumulate unit
-│   ├── activation/
-│   │   ├── sigmoid.vhd
-│   │   ├── relu.vhd
-│   │   └── activation_layer.vhd
-│   └── weight_bank.vhd        # Weight storage with sharing
+│   ├── accumulator/
+│   ├── layer/
+│   ├── neuron/
+│   └── sigmoid
 ├── layers/
 │   ├── dense_layer.vhd
 │   ├── conv2d_layer.vhd
@@ -396,18 +383,7 @@ src/
 │   ├── memory_control_unit.vhd
 │   └── calculation_unit.vhd
 ├── memory/
-│   ├── bram.vhd
-│   └── weight_memory.vhd
+│   └── bram.vhd
 └── top/
     └── neural_network.vhd
 ```
-
----
-
-## Next Steps
-
-1. Review this plan and adjust based on feedback
-2. Start Phase 1: Weight Bank implementation
-3. Create weight_bank.vhd entity
-4. Modify existing layers to use weight bank
-

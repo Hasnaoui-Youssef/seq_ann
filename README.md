@@ -2,6 +2,8 @@
 
 VHDL-based neural network inference accelerator with Keras/TensorFlow integration for weight loading and testing.
 
+**NOTE : This README is deprecated and needs updating to the overall structure of the project!**
+
 ## Features
 
 - **Hardware Components:**
@@ -72,22 +74,17 @@ make test-all
 ```
 seq_acc/
 ├── src/                    # VHDL source files
-│   ├── types.vhd          # Common type definitions
-│   ├── activation_func.vhd # Activation functions (sigmoid, ReLU)
-│   ├── neuron.vhd         # Single neuron with weight storage
-│   ├── layer.vhd          # Layer of neurons
-│   ├── neural_network.vhd # Neural network top module
-│   └── sigmoid_lut_pkg.vhd # Generated LUT package
+│   ├── packages            # Common type definitions
+│   ├── core                # Core logic
+│   │   ├──accumulator/     # Accumulator implementation
+│   │   ├──layer/           # Neural Network layer
+│   │   ├──neuron/          # Neuron implementation
+│   │   └──sigmoid/         # **DEPRECATED** placement for the sigmoid lut package (see package folder)
+│   ├── memory              # Memory interface
+│   ├── units               # Processing units
+│   └── top                 # Top level design
 ├── testbench/              # VHDL testbenches
-│   ├── activation_func_tb.vhd
-│   ├── neuron_tb.vhd
-│   ├── layer_tb.vhd
-│   └── neural_network_tb.vhd # Generated NN testbench
 ├── scripts/                # Python generation scripts
-│   ├── config.py          # Configuration
-│   ├── gen_sigmoid_pkg.py # LUT generator
-│   ├── gen_testbenches.py # Testbench generator
-│   └── gen_neural_network.py # NN testbench generator
 ├── .venv/                  # Python virtual environment
 ├── Makefile                # Build automation
 └── requirements.txt        # Python dependencies
