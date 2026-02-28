@@ -20,4 +20,10 @@
 - Add 'make configure' target
 - Remove deprecated scripts/config.py
 
+### ONNX Integration
+- Add scripts/onnx_parser.py for parsing ONNX model files
+- Integrate --model flag into configure.py
+- Export weights to hex files in data/
+- Add onnx to requirements.txt
+
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

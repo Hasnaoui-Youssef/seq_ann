@@ -158,6 +158,12 @@ def main():
         action="store_true",
         help="Skip testbench generation",
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Path to ONNX model file. Extracts topology and weights.",
+    )
     args = parser.parse_args()
 
     # Load configuration
@@ -166,6 +172,42 @@ def main():
     print("=" * 60)
 
     config = auto_load_config(str(ROOT_DIR), args.config)
+
+    # If ONNX model provided, parse it and export weights
+    parsed_network = None
+    if args.model:
+        from onnx_parser import parse_onnx, print_network_summary, export_weights_hex
+
+        print(f"\nParsing ONNX model: {args.model}")
+        parsed_network = parse_onnx(args.model)
+        print_network_summary(parsed_network)
+
+        # Override network config from ONNX model
+        from config.loader import NetworkConfig, DenseLayerConfig
+
+        config.network = NetworkConfig(
+            name=parsed_network.name,
+            layers=[
+                DenseLayerConfig(
+                    neurons=layer.num_outputs,
+                    activation=layer.activation if layer.activation != "none" else "sigmoid",
+                )
+                for layer in parsed_network.layers
+            ],
+        )
+
+        # Export weights
+        print("\n  Exporting weights...")
+        data_dir = ROOT_DIR / "data"
+        weight_files = export_weights_hex(
+            parsed_network,
+            data_dir,
+            config.precision.int_bits,
+            config.precision.frac_bits,
+        )
+        for name, path in weight_files.items():
+            print(f"    {name}: {path}")
+
     print(f"\nConfiguration: {config.network.name}")
     print(f"  Precision: Q{config.precision.int_bits}.{config.precision.frac_bits} "
           f"({config.precision.data_width}-bit)")

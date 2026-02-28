@@ -31,3 +31,7 @@ Thumbs.db
 
 # Project specific
 xml/
+
+# Generated data files
+data/*.hex
+data/*.onnx
