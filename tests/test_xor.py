@@ -10,11 +10,6 @@ from sfixed_utils import (
 )
 
 
-def to_slv(value: float) -> int:
-    """Convert a float to the integer bit pattern for std_logic_vector host_data."""
-    return real_to_sfixed(value)
-
-
 async def reset(dut, cycles=2):
     dut.rst.value = 1
     dut.load_weights.value = 0
@@ -32,7 +27,7 @@ async def reset(dut, cycles=2):
 
 async def write_mem(dut, addr: int, val: float):
     dut.host_addr.value = addr
-    dut.host_data.value = to_slv(val)
+    dut.host_data.value = real_to_sfixed(val)
     dut.host_write_en.value = 1
     await RisingEdge(dut.clk)
     dut.host_write_en.value = 0

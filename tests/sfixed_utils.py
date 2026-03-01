@@ -27,9 +27,7 @@ INT_BITS = DATA_WIDTH - FRAC_BITS
 
 
 def real_to_sfixed(value: float) -> int:
-    """Convert a real number to its sfixed bit representation (as a Python int).
-
-    The result is a two's complement integer with DATA_WIDTH bits,
+    """The result is a two's complement integer with DATA_WIDTH bits,
     representing sfixed(INT_BITS-1 downto -FRAC_BITS).
     """
     scaled = round(value * (1 << FRAC_BITS))
