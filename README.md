@@ -121,11 +121,25 @@ network:
 
 ## Testing
 
-All tests use cocotb with GHDL VPI:
+All tests use [cocotb](https://www.cocotb.org/) with GHDL's VPI interface. cocotb lets us write testbenches in Python instead of VHDL, making it easier to compute expected values, parameterize tests, and integrate with pytest.
+
+GHDL's VPI does not support indexing into `sfixed` array ports directly, so VHDL wrapper entities in `tests/cocotb_wrappers.vhd` flatten array ports into wide `std_logic_vector` signals. The Python helpers in `tests/sfixed_utils.py` handle packing/unpacking between Python floats and the flat bit vectors.
+
+### Test suite
+
+| Test | DUT | What it covers |
+|------|-----|----------------|
+| `test_activation_func` | `activation_func` (sigmoid) | LUT accuracy, saturation, midpoint, symmetry |
+| `test_neuron` | `neuron` | Forward pass, backward pass gradients |
+| `test_layer` | `layer` | Forward pass with weight bank, weight reload |
+| `test_xor` | `neural_network` | End-to-end XOR inference (2→3→1) |
+
+### Running tests
 
 ```bash
-make test                                    # Run all
-python -m pytest tests/run.py -k neuron -v   # Run specific
+make test                                    # Configure + run all
+make cocotb-test                             # Run without reconfiguring
+python -m pytest tests/run.py -k neuron -v   # Run a specific test
 python -m pytest tests/run.py -v             # Verbose output
 ```
 
