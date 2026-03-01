@@ -26,4 +26,14 @@
 - Export weights to hex files in data/
 - Add onnx to requirements.txt
 
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+### sfixed Port Conversion
+- Convert all layer entity ports from std_logic_vector to sfixed_bus/sfixed_bus_array
+- Affected files: conv2d_layer, maxpool_layer, avgpool_layer, flatten_layer, rnn_cell, lstm_cell, rnn_layer
+- Fix fixed-point constant initialization in lstm_cell and avgpool_layer
+- Update XOR testbenches for sfixed output ports
+
+### cocotb Test Framework
+- Add cocotb-based Python testbenches replacing VHDL testbench generators
+- VHDL wrappers with flattened std_logic_vector ports (GHDL VPI workaround)
+- Tests for activation_func, neuron, layer, and full XOR network inference
+- Add cocotb-test Makefile target and pytest runner

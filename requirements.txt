@@ -4,6 +4,9 @@ networkx>=3.0
 matplotlib>=3.7.0
 pyyaml>=6.0
 jsonschema>=4.0
+cocotb>=2.0
+cocotb-test>=0.2.0
+pytest>=7.0
 # Optional: for training models (MNIST/timeseries harnesses)
 # torch>=2.0.0
 # torchvision>=0.15.0

@@ -35,3 +35,5 @@ xml/
 # Generated data files
 data/*.hex
 data/*.onnx
+sim_build/
+results.xml

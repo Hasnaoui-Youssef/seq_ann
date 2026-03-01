@@ -4,19 +4,22 @@ include make/sources.mk
 include make/scripts.mk
 include make/testbenches.mk
 
-.PHONY: clean test test-all
+.PHONY: clean test test-all cocotb-test
 
 # Default: complete workflow with waveform viewing
 all: generate clean compile run view
 
-# Headless test (no GTKWave)
+# Headless test (no waveform viewer)
 test: generate clean compile run
 
-# Test all components (without opening viewer for each)
+# Headless test all components
 test-all:
-	@echo "Running all tests..."
 	@$(MAKE) TESTBENCH=activation_func test
 	@$(MAKE) TESTBENCH=neuron test
 	@$(MAKE) TESTBENCH=layer test
 	@$(MAKE) TESTBENCH=xor test
-	@echo "All tests complete. Waveforms available in $(WORKDIR)/"
+
+# cocotb tests via pytest
+cocotb-test: generate
+	@echo "Running cocotb tests..."
+	@cd $(CURDIR) && python -m pytest tests/run.py -v $(PYTEST_ARGS)
