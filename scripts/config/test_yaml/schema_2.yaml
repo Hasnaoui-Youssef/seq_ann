@@ -1,0 +1,25 @@
+precision:
+  total_bits: 64
+
+sigmoid:
+  lut_bits: 12
+  range_bits: 4
+
+memory:
+  input_base_addr: 0
+  weights_base_addr: 0xFF00
+  output_base_addr: 0xFFFF
+
+network:
+  name: random_network
+  layers:
+    - type: dense
+      neurons: 784
+      activation: sigmoid
+
+    - type: maxpool
+      kernel_size: 4
+
+    - type: dense
+      neurons: 4
+      activation: relu

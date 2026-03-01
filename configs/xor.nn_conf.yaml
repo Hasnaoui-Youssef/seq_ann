@@ -1,0 +1,25 @@
+# XOR Neural Network Configuration
+# 2 inputs -> 3 hidden -> 1 output
+
+precision:
+  int_bits: 16
+  frac_bits: 16
+
+sigmoid:
+  lut_bits: 8     # 256 entries (2^8)
+  range_bits: 3   # [-8, 8)
+
+hardware:
+  acc_size: 4     # Adder tree width per accumulator unit
+  num_accs: 2     # Number of accumulator units
+  num_mults: 8    # Number of multiplier units
+
+network:
+  name: xor_network
+  layers:
+    - type: dense
+      neurons: 3
+      activation: sigmoid
+    - type: dense
+      neurons: 1
+      activation: sigmoid

@@ -1,0 +1,16 @@
+precision:
+  total_bits: -34
+
+memory:
+  input_base_addr : "hello"
+  weights_base_addr: -4324242
+  output_base_addr: 13451351
+
+network:
+  name: wrong_network
+
+  layers:
+    - type: flatten
+    - type: avgpool
+      kernel_size: 4
+

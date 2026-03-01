@@ -1,2 +1,40 @@
+# Virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# GHDL/VHDL
 work/
+*.o
+*.cf
+*.ghw
+*.vcd
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
 xml/
+
+# Generated data files
+data/*.hex
+data/*.onnx
+sim_build/
+results.xml
+sim.log
