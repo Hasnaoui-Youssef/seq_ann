@@ -37,3 +37,13 @@
 - VHDL wrappers with flattened std_logic_vector ports (GHDL VPI workaround)
 - Tests for activation_func, neuron, layer, and full XOR network inference
 - Add cocotb-test Makefile target and pytest runner
+
+### Cleanup
+- Remove all VHDL testbenches (replaced by cocotb tests)
+- Remove deprecated scripts: gen_testbenches.py, gen_neural_network.py, scan_dependencies.py, train_xor_numpy.py
+- Remove testbenches.mk, dependencies.png, sim.log
+- Remove testbench generation from configure.py
+- Simplify Makefile: `make test` now runs cocotb tests
+- Remove networkx/matplotlib from requirements (only needed by removed scan_dependencies.py)
+- Update README.md to reflect current project structure
+- Update vhdl_ls.toml to reference tests/cocotb_wrappers.vhd

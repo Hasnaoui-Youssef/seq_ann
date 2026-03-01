@@ -24,14 +24,14 @@ entity rnn_cell is
         rst : in std_logic;
 
         -- Input for this timestep
-        x_in  : in std_logic_bus_array(0 to INPUT_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        x_in  : in sfixed_bus_array(0 to INPUT_SIZE - 1);
         -- Previous hidden state
-        h_prev : in std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        h_prev : in sfixed_bus_array(0 to HIDDEN_SIZE - 1);
         -- New hidden state
-        h_out  : out std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        h_out  : out sfixed_bus_array(0 to HIDDEN_SIZE - 1);
 
         -- Weights (from weight bank, all available in parallel)
-        weights : in std_logic_bus_array(0 to (INPUT_SIZE + HIDDEN_SIZE + 1) * HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        weights : in sfixed_bus_array(0 to (INPUT_SIZE + HIDDEN_SIZE + 1) * HIDDEN_SIZE - 1);
 
         -- Control
         compute_en : in std_logic;
@@ -45,28 +45,26 @@ architecture rtl of rnn_cell is
     constant W_HH_SIZE : integer := HIDDEN_SIZE * HIDDEN_SIZE;
     constant NUM_WEIGHTS : integer := (INPUT_SIZE + HIDDEN_SIZE + 1) * HIDDEN_SIZE;
 
-    function mult(a, b : std_logic_vector) return sfixed_bus is
+    function mult(a, b : sfixed_bus) return sfixed_bus is
     begin
-        return resize(to_sfixed(a, INT_BITS - 1, -FRAC_BITS) *
-                      to_sfixed(b, INT_BITS - 1, -FRAC_BITS),
-                      INT_BITS - 1, -FRAC_BITS);
+        return resize(a * b, INT_BITS - 1, -FRAC_BITS);
     end function;
 
     -- Tanh approximation using piecewise linear
     function tanh_approx(x : sfixed_bus) return sfixed_bus is
-        variable one_pos : sfixed_bus := to_sfixed(1.0, INT_BITS - 1, -FRAC_BITS);
-        variable one_neg : sfixed_bus := to_sfixed(-1.0, INT_BITS - 1, -FRAC_BITS);
+        constant one_pos : sfixed_bus := to_sfixed(1.0, INT_BITS - 1, -FRAC_BITS);
+        constant one_neg : sfixed_bus := to_sfixed(-1.0, INT_BITS - 1, -FRAC_BITS);
     begin
         if x > one_pos then
             return one_pos;
         elsif x < one_neg then
             return one_neg;
         else
-            return x;  -- Linear region: tanh(x) ≈ x for small x
+            return x;
         end if;
     end function;
 
-    signal h_reg : std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0)
+    signal h_reg : sfixed_bus_array(0 to HIDDEN_SIZE - 1)
         := (others => (others => '0'));
     signal done_reg : std_logic := '0';
 
@@ -89,7 +87,7 @@ begin
                     for j in 0 to HIDDEN_SIZE - 1 loop
                         -- Start with bias
                         w_idx := W_IH_SIZE + W_HH_SIZE + j;
-                        acc := to_sfixed(weights(w_idx), INT_BITS - 1, -FRAC_BITS);
+                        acc := weights(w_idx);
 
                         -- W_ih * x_t
                         for i in 0 to INPUT_SIZE - 1 loop
@@ -106,7 +104,7 @@ begin
                         end loop;
 
                         -- Apply tanh activation
-                        h_reg(j) <= to_std_logic_vector(tanh_approx(acc));
+                        h_reg(j) <= tanh_approx(acc);
                     end loop;
                     done_reg <= '1';
                 end if;

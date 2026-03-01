@@ -6,10 +6,10 @@ source.files = [
     'src/memory/*.vhd',
     'src/units/*.vhd',
     'src/packages/*.vhd',
-    'src/top/*.vhd',
+    'src/layers/*.vhd',
     'src/core/*/*.vhd',
     'src/*.vhd',
-    'testbench/*.vhd',
+    'tests/cocotb_wrappers.vhd',
 ]
 
 # Libraries can be marked as third-party to disable some analysis warnings, such as unused declarations

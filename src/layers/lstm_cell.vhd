@@ -28,14 +28,14 @@ entity lstm_cell is
         clk : in std_logic;
         rst : in std_logic;
 
-        x_in   : in std_logic_bus_array(0 to INPUT_SIZE - 1)(DATA_WIDTH - 1 downto 0);
-        h_prev : in std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0);
-        c_prev : in std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        x_in   : in sfixed_bus_array(0 to INPUT_SIZE - 1);
+        h_prev : in sfixed_bus_array(0 to HIDDEN_SIZE - 1);
+        c_prev : in sfixed_bus_array(0 to HIDDEN_SIZE - 1);
 
-        h_out  : out std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0);
-        c_out  : out std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        h_out  : out sfixed_bus_array(0 to HIDDEN_SIZE - 1);
+        c_out  : out sfixed_bus_array(0 to HIDDEN_SIZE - 1);
 
-        weights : in std_logic_bus_array(0 to 4 * (INPUT_SIZE + HIDDEN_SIZE + 1) * HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        weights : in sfixed_bus_array(0 to 4 * (INPUT_SIZE + HIDDEN_SIZE + 1) * HIDDEN_SIZE - 1);
 
         compute_en   : in std_logic;
         compute_done : out std_logic
@@ -52,21 +52,18 @@ architecture rtl of lstm_cell is
         return resize(a * b, INT_BITS - 1, -FRAC_BITS);
     end function;
 
-    function to_sf(slv : std_logic_vector) return sfixed_bus is
-    begin
-        return to_sfixed(slv, INT_BITS - 1, -FRAC_BITS);
-    end function;
-
     -- Sigmoid approximation: piecewise linear
     function sigmoid_approx(x : sfixed_bus) return sfixed_bus is
-        variable half : sfixed_bus := to_sfixed(0.5, INT_BITS - 1, -FRAC_BITS);
-        variable one  : sfixed_bus := to_sfixed(1.0, INT_BITS - 1, -FRAC_BITS);
-        variable zero : sfixed_bus := (others => '0');
-        variable quarter : sfixed_bus := to_sfixed(0.25, INT_BITS - 1, -FRAC_BITS);
+        constant half    : sfixed_bus := to_sfixed(0.5, INT_BITS - 1, -FRAC_BITS);
+        constant one     : sfixed_bus := to_sfixed(1.0, INT_BITS - 1, -FRAC_BITS);
+        constant zero    : sfixed_bus := to_sfixed(0.0, INT_BITS - 1, -FRAC_BITS);
+        constant quarter : sfixed_bus := to_sfixed(0.25, INT_BITS - 1, -FRAC_BITS);
+        constant two_pos : sfixed_bus := to_sfixed(2.0, INT_BITS - 1, -FRAC_BITS);
+        constant two_neg : sfixed_bus := to_sfixed(-2.0, INT_BITS - 1, -FRAC_BITS);
     begin
-        if x > to_sfixed(2.0, INT_BITS - 1, -FRAC_BITS) then
+        if x > two_pos then
             return one;
-        elsif x < to_sfixed(-2.0, INT_BITS - 1, -FRAC_BITS) then
+        elsif x < two_neg then
             return zero;
         else
             return resize(half + mult_sf(quarter, x), INT_BITS - 1, -FRAC_BITS);
@@ -75,8 +72,8 @@ architecture rtl of lstm_cell is
 
     -- Tanh approximation: piecewise linear
     function tanh_approx(x : sfixed_bus) return sfixed_bus is
-        variable one_pos : sfixed_bus := to_sfixed(1.0, INT_BITS - 1, -FRAC_BITS);
-        variable one_neg : sfixed_bus := to_sfixed(-1.0, INT_BITS - 1, -FRAC_BITS);
+        constant one_pos : sfixed_bus := to_sfixed(1.0, INT_BITS - 1, -FRAC_BITS);
+        constant one_neg : sfixed_bus := to_sfixed(-1.0, INT_BITS - 1, -FRAC_BITS);
     begin
         if x > one_pos then
             return one_pos;
@@ -87,9 +84,9 @@ architecture rtl of lstm_cell is
         end if;
     end function;
 
-    signal h_reg : std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0)
+    signal h_reg : sfixed_bus_array(0 to HIDDEN_SIZE - 1)
         := (others => (others => '0'));
-    signal c_reg : std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0)
+    signal c_reg : sfixed_bus_array(0 to HIDDEN_SIZE - 1)
         := (others => (others => '0'));
     signal done_reg : std_logic := '0';
 
@@ -98,9 +95,9 @@ architecture rtl of lstm_cell is
     function compute_gate(
         gate_offset : integer;
         hidden_idx  : integer;
-        x           : std_logic_bus_array;
-        h           : std_logic_bus_array;
-        w           : std_logic_bus_array
+        x           : sfixed_bus_array;
+        h           : sfixed_bus_array;
+        w           : sfixed_bus_array
     ) return sfixed_bus is
         variable acc : sfixed_bus;
         variable w_base : integer;
@@ -108,15 +105,15 @@ architecture rtl of lstm_cell is
     begin
         w_base := gate_offset * GATE_WEIGHTS + hidden_idx * (CONCAT_SIZE + 1);
         -- Bias
-        acc := to_sf(w(w_base + CONCAT_SIZE));
+        acc := w(w_base + CONCAT_SIZE);
         -- Input weights
         for i in 0 to INPUT_SIZE - 1 loop
-            acc := resize(acc + mult_sf(to_sf(x(i)), to_sf(w(w_base + i))),
+            acc := resize(acc + mult_sf(x(i), w(w_base + i)),
                          INT_BITS - 1, -FRAC_BITS);
         end loop;
         -- Hidden weights
         for i in 0 to HIDDEN_SIZE - 1 loop
-            acc := resize(acc + mult_sf(to_sf(h(i)), to_sf(w(w_base + INPUT_SIZE + i))),
+            acc := resize(acc + mult_sf(h(i), w(w_base + INPUT_SIZE + i)),
                          INT_BITS - 1, -FRAC_BITS);
         end loop;
         return acc;
@@ -149,15 +146,15 @@ begin
 
                         -- Cell state update: c_t = f_t * c_{t-1} + i_t * g_t
                         c_new := resize(
-                            mult_sf(f_gate, to_sf(c_prev(j))) +
+                            mult_sf(f_gate, c_prev(j)) +
                             mult_sf(i_gate, g_gate),
                             INT_BITS - 1, -FRAC_BITS);
-                        c_reg(j) <= to_std_logic_vector(c_new);
+                        c_reg(j) <= c_new;
 
                         -- Hidden state: h_t = o_t * tanh(c_t)
                         c_tanh := tanh_approx(c_new);
                         h_new := mult_sf(o_gate, c_tanh);
-                        h_reg(j) <= to_std_logic_vector(h_new);
+                        h_reg(j) <= h_new;
                     end loop;
                     done_reg <= '1';
                 end if;

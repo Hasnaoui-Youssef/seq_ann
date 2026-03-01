@@ -27,15 +27,15 @@ entity maxpool_layer is
 
         -- Forward Interface
         fwd_ctrl_in  : in layer_control_t;
-        fwd_data_in  : in std_logic_bus_array(0 to C * H_IN * W_IN - 1)(DATA_WIDTH - 1 downto 0);
+        fwd_data_in  : in sfixed_bus_array(0 to C * H_IN * W_IN - 1);
         fwd_ctrl_out : out layer_control_t;
-        fwd_data_out : out std_logic_bus_array(0 to C * ((H_IN - POOL_H)/STRIDE_H + 1) * ((W_IN - POOL_W)/STRIDE_W + 1) - 1)(DATA_WIDTH - 1 downto 0);
+        fwd_data_out : out sfixed_bus_array(0 to C * ((H_IN - POOL_H)/STRIDE_H + 1) * ((W_IN - POOL_W)/STRIDE_W + 1) - 1);
 
         -- Backward Interface
         bwd_ctrl_in  : in layer_control_t;
-        bwd_error_in : in std_logic_bus_array(0 to C * ((H_IN - POOL_H)/STRIDE_H + 1) * ((W_IN - POOL_W)/STRIDE_W + 1) - 1)(DATA_WIDTH - 1 downto 0);
+        bwd_error_in : in sfixed_bus_array(0 to C * ((H_IN - POOL_H)/STRIDE_H + 1) * ((W_IN - POOL_W)/STRIDE_W + 1) - 1);
         bwd_ctrl_out : out layer_control_t;
-        bwd_error_out: out std_logic_bus_array(0 to C * H_IN * W_IN - 1)(DATA_WIDTH - 1 downto 0)
+        bwd_error_out: out sfixed_bus_array(0 to C * H_IN * W_IN - 1)
     );
 end entity maxpool_layer;
 
@@ -50,7 +50,7 @@ architecture rtl of maxpool_layer is
     type index_array_t is array (0 to OUTPUT_SIZE - 1) of integer range 0 to INPUT_SIZE - 1;
     signal max_indices : index_array_t := (others => 0);
 
-    signal output_reg : std_logic_bus_array(0 to OUTPUT_SIZE - 1)(DATA_WIDTH - 1 downto 0)
+    signal output_reg : sfixed_bus_array(0 to OUTPUT_SIZE - 1)
         := (others => (others => '0'));
 
 begin
@@ -87,7 +87,7 @@ begin
                     out_idx := ch * H_OUT * W_OUT + oh * W_OUT + ow;
                     -- Initialize with first element in pool window
                     in_idx := ch * H_IN * W_IN + (oh * STRIDE_H) * W_IN + (ow * STRIDE_W);
-                    max_val := to_sfixed(fwd_data_in(in_idx), INT_BITS - 1, -FRAC_BITS);
+                    max_val := fwd_data_in(in_idx);
                     max_idx := in_idx;
 
                     -- Find maximum in pool window
@@ -96,7 +96,7 @@ begin
                             in_idx := ch * H_IN * W_IN +
                                       (oh * STRIDE_H + ph) * W_IN +
                                       (ow * STRIDE_W + pw);
-                            cur_val := to_sfixed(fwd_data_in(in_idx), INT_BITS - 1, -FRAC_BITS);
+                            cur_val := fwd_data_in(in_idx);
                             if cur_val > max_val then
                                 max_val := cur_val;
                                 max_idx := in_idx;
@@ -104,7 +104,7 @@ begin
                         end loop;
                     end loop;
 
-                    output_reg(out_idx) <= to_std_logic_vector(max_val);
+                    output_reg(out_idx) <= max_val;
                     max_indices(out_idx) <= max_idx;
                 end loop;
             end loop;

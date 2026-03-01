@@ -9,8 +9,8 @@ entity calculation_unit is
     generic (
         NUM_INPUTS  : integer := 2;
         NUM_LAYERS  : integer := 2;
-        LAYER_SIZES : layer_config_array;  -- Array of layer sizes (e.g., (3, 1) for 2->3->1)
-        USE_SIGMOID : boolean_array        -- Per-layer activation: true=sigmoid, false=relu
+        LAYER_SIZES : layer_config_array;
+        USE_SIGMOID : boolean_array
     );
     port (
         clk : in std_logic;
@@ -18,23 +18,23 @@ entity calculation_unit is
 
         -- Control Interface
         load_weights : in std_logic;
-        start        : in std_logic;  -- Start inference (weights must be loaded)
+        start        : in std_logic;
         mode         : in std_logic;  -- '0' = Forward only, '1' = Forward + Backward + Update
         start_store  : in std_logic;
 
         -- Status
         weights_loaded : out std_logic;
         ready          : out std_logic;
-        done           : out std_logic;  -- Inference/backward pass complete
+        done           : out std_logic;
 
         -- Network Outputs (Forward) - sized by last layer
-        output_data  : out std_logic_bus_array(0 to LAYER_SIZES(LAYER_SIZES'high) - 1)(DATA_WIDTH - 1 downto 0);
+        output_data  : out sfixed_bus_array(0 to LAYER_SIZES(LAYER_SIZES'high) - 1);
         output_valid : out std_logic;
 
         -- Training parameters
-        learning_rate : in std_logic_vector(DATA_WIDTH - 1 downto 0);
+        learning_rate : in sfixed_bus;
 
-        -- Memory Interface
+        -- Memory Interface (still std_logic_vector for BRAM compatibility)
         mem_read_req   : out std_logic;
         mem_read_addr  : out integer;
         mem_read_data  : in std_logic_vector(DATA_WIDTH - 1 downto 0);
@@ -70,17 +70,11 @@ architecture rtl of calculation_unit is
 
     -- Error computation: output - target (for MSE loss gradient)
     function compute_error(
-        output_val : std_logic_vector;
-        target_val : std_logic_vector
-    ) return std_logic_vector is
-        variable out_sf : sfixed_bus;
-        variable tgt_sf : sfixed_bus;
-        variable err_sf : sfixed_bus;
+        output_val : sfixed_bus;
+        target_val : sfixed_bus
+    ) return sfixed_bus is
     begin
-        out_sf := to_sfixed(output_val, INT_BITS - 1, -FRAC_BITS);
-        tgt_sf := to_sfixed(target_val, INT_BITS - 1, -FRAC_BITS);
-        err_sf := resize(out_sf - tgt_sf, INT_BITS - 1, -FRAC_BITS);
-        return to_std_logic_vector(err_sf);
+        return resize(output_val - target_val, INT_BITS - 1, -FRAC_BITS);
     end function;
 
     constant MAX_SIZE      : integer := max_layer_size;
@@ -112,17 +106,18 @@ architecture rtl of calculation_unit is
     constant WEIGHT_BASE_ADDR : integer := NUM_INPUTS + NUM_OUTPUTS;
 
     type ctrl_array_t is array (0 to NUM_LAYERS) of layer_control_t;
-    type data_array_t is array (0 to NUM_LAYERS) of std_logic_bus_array(0 to MAX_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+    type data_array_t is array (0 to NUM_LAYERS) of sfixed_bus_array(0 to MAX_SIZE - 1);
 
     constant CTRL_INIT : layer_control_t := (valid => '0', last => '0');
-    constant DATA_INIT : std_logic_bus_array(0 to MAX_SIZE - 1)(DATA_WIDTH - 1 downto 0) := (others => (others => '0'));
+    constant DATA_INIT : sfixed_bus_array(0 to MAX_SIZE - 1) := (others => (others => '0'));
 
     signal fwd_ctrl : ctrl_array_t := (others => CTRL_INIT);
     signal fwd_data : data_array_t := (others => DATA_INIT);
     signal bwd_ctrl : ctrl_array_t := (others => CTRL_INIT);
     signal bwd_data : data_array_t := (others => DATA_INIT);
 
-    signal input_buffer : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
+    signal input_buffer : sfixed_bus_array(0 to NUM_INPUTS - 1)
+        := (others => (others => '0'));
 
     signal layer_weight_load_en   : std_logic_vector(0 to NUM_LAYERS - 1) := (others => '0');
     signal layer_weight_load_done : std_logic_vector(0 to NUM_LAYERS - 1);
@@ -158,12 +153,12 @@ architecture rtl of calculation_unit is
 
     signal fwd_complete : std_logic := '0';
 
-    signal output_data_reg : std_logic_bus_array(0 to NUM_OUTPUTS - 1)(DATA_WIDTH - 1 downto 0)
+    signal output_data_reg : sfixed_bus_array(0 to NUM_OUTPUTS - 1)
         := (others => (others => '0'));
     signal output_valid_reg : std_logic := '0';
 
     -- Target buffer for training
-    signal target_buffer : std_logic_bus_array(0 to NUM_OUTPUTS - 1)(DATA_WIDTH - 1 downto 0)
+    signal target_buffer : sfixed_bus_array(0 to NUM_OUTPUTS - 1)
         := (others => (others => '0'));
 
     -- Weight update control signals
@@ -176,7 +171,12 @@ architecture rtl of calculation_unit is
     -- Phase control: during training, forward phase first, then backward phase
     signal in_backward_phase : std_logic := '0';
 
+    -- BRAM data converted to sfixed at boundary
+    signal mem_read_sfixed : sfixed_bus;
+
 begin
+
+    mem_read_sfixed <= to_sfixed(mem_read_data, INT_BITS - 1, -FRAC_BITS);
 
     fwd_complete <= fwd_ctrl(NUM_LAYERS).valid;
     bwd_complete <= bwd_ctrl(0).valid;
@@ -300,7 +300,7 @@ begin
 
                     when FETCH_INPUTS_WAIT =>
                         if mem_read_valid = '1' then
-                            input_buffer(fetch_idx) <= mem_read_data;
+                            input_buffer(fetch_idx) <= mem_read_sfixed;
                             if fetch_idx = NUM_INPUTS - 1 then
                                 state <= FORWARD_START;
                             else
@@ -338,7 +338,7 @@ begin
 
                     when LOAD_TARGET_WAIT =>
                         if mem_read_valid = '1' then
-                            target_buffer(fetch_idx) <= mem_read_data;
+                            target_buffer(fetch_idx) <= mem_read_sfixed;
                             if fetch_idx = NUM_OUTPUTS - 1 then
                                 state <= BACKWARD_START;
                             else
@@ -397,7 +397,7 @@ begin
         constant THIS_OUTPUT_SIZE : integer := LAYER_SIZES(i);
         constant THIS_WEIGHT_COUNT: integer := (THIS_INPUT_SIZE + 1) * THIS_OUTPUT_SIZE;
 
-        signal layer_grads : std_logic_bus_array(0 to THIS_WEIGHT_COUNT - 1)(DATA_WIDTH - 1 downto 0);
+        signal layer_grads : sfixed_bus_array(0 to THIS_WEIGHT_COUNT - 1);
     begin
         u_layer: entity work.layer
             generic map (
@@ -420,7 +420,7 @@ begin
                 bwd_error_out => bwd_data(i)(0 to THIS_INPUT_SIZE - 1),
                 -- Weight bank interface
                 weight_load_en => layer_weight_load_en(i),
-                weight_load_data => mem_read_data,
+                weight_load_data => mem_read_sfixed,
                 weight_load_done => layer_weight_load_done(i),
                 weight_save_en => '0',
                 weight_save_data => open,

@@ -29,23 +29,23 @@ entity rnn_layer is
 
         -- Forward path
         fwd_ctrl_in  : in  layer_control_t;
-        fwd_data_in  : in  std_logic_bus_array(0 to SEQ_LEN * INPUT_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        fwd_data_in  : in  sfixed_bus_array(0 to SEQ_LEN * INPUT_SIZE - 1);
         fwd_ctrl_out : out layer_control_t;
-        fwd_data_out : out std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        fwd_data_out : out sfixed_bus_array(0 to HIDDEN_SIZE - 1);
 
         -- Backward path
         bwd_ctrl_in  : in  layer_control_t;
-        bwd_error_in : in  std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        bwd_error_in : in  sfixed_bus_array(0 to HIDDEN_SIZE - 1);
         bwd_ctrl_out : out layer_control_t;
-        bwd_error_out: out std_logic_bus_array(0 to SEQ_LEN * INPUT_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        bwd_error_out: out sfixed_bus_array(0 to SEQ_LEN * INPUT_SIZE - 1);
 
         -- Weight management
         weight_load_en   : in  std_logic;
-        weight_load_data : in  std_logic_vector(DATA_WIDTH - 1 downto 0);
+        weight_load_data : in  sfixed_bus;
         weight_load_done : out std_logic;
 
         weight_update_en   : in  std_logic;
-        weight_learn_rate  : in  std_logic_vector(DATA_WIDTH - 1 downto 0);
+        weight_learn_rate  : in  sfixed_bus;
         weight_update_done : out std_logic
     );
 end entity rnn_layer;
@@ -72,29 +72,29 @@ architecture rtl of rnn_layer is
     signal step_idx : integer range 0 to SEQ_LEN - 1 := 0;
 
     -- Hidden / cell state registers
-    signal h_state : std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0)
+    signal h_state : sfixed_bus_array(0 to HIDDEN_SIZE - 1)
         := (others => (others => '0'));
-    signal c_state : std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0)
+    signal c_state : sfixed_bus_array(0 to HIDDEN_SIZE - 1)
         := (others => (others => '0'));
 
     -- Timestep input slice
-    signal x_step : std_logic_bus_array(0 to INPUT_SIZE - 1)(DATA_WIDTH - 1 downto 0)
+    signal x_step : sfixed_bus_array(0 to INPUT_SIZE - 1)
         := (others => (others => '0'));
 
     -- Cell outputs
-    signal h_new : std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0);
-    signal c_new : std_logic_bus_array(0 to HIDDEN_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+    signal h_new : sfixed_bus_array(0 to HIDDEN_SIZE - 1);
+    signal c_new : sfixed_bus_array(0 to HIDDEN_SIZE - 1);
 
     -- Cell control
     signal cell_en   : std_logic := '0';
     signal cell_done : std_logic;
 
     -- Weight bank
-    signal wb_weights : std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
+    signal wb_weights : sfixed_bus_array(0 to NUM_WEIGHTS - 1);
     signal wb_read_en : std_logic := '0';
 
     -- Stored input for backward pass
-    signal stored_input : std_logic_bus_array(0 to SEQ_LEN * INPUT_SIZE - 1)(DATA_WIDTH - 1 downto 0)
+    signal stored_input : sfixed_bus_array(0 to SEQ_LEN * INPUT_SIZE - 1)
         := (others => (others => '0'));
 
 begin

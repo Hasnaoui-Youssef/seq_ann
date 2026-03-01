@@ -1,6 +1,7 @@
 library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
+use IEEE.fixed_pkg.all;
 use work.types.all;
 use work.pkg_layer.all;
 
@@ -8,8 +9,8 @@ entity neural_network is
     generic(
         NUM_INPUTS  : integer := 2;
         NUM_LAYERS  : integer := 2;
-        LAYER_SIZES : layer_config_array;  -- e.g., (3, 1) for hidden=3, output=1
-        USE_SIGMOID : boolean_array        -- Per-layer activation: true=sigmoid, false=relu
+        LAYER_SIZES : layer_config_array;
+        USE_SIGMOID : boolean_array
     );
     port (
         clk : in std_logic;
@@ -25,13 +26,13 @@ entity neural_network is
         ready          : out std_logic;
         done           : out std_logic;
 
-        -- Host Interface (Memory Loading: inputs at 0..NUM_INPUTS-1, weights after)
+        -- Host Interface (Memory Loading)
         host_write_en : in std_logic;
         host_addr     : in integer;
         host_data     : in std_logic_vector(DATA_WIDTH - 1 downto 0);
 
-        -- Output Interface - sized by last layer
-        output_data  : out std_logic_bus_array(0 to LAYER_SIZES(LAYER_SIZES'high) - 1)(DATA_WIDTH - 1 downto 0);
+        -- Output Interface - sfixed array sized by last layer
+        output_data  : out sfixed_bus_array(0 to LAYER_SIZES(LAYER_SIZES'high) - 1);
         output_valid : out std_logic
     );
 end entity neural_network;
@@ -46,6 +47,7 @@ architecture rtl of neural_network is
     signal calc_ready  : std_logic;
     signal calc_weights_loaded : std_logic;
     signal learning_rate : std_logic_vector(DATA_WIDTH - 1 downto 0);
+    signal learning_rate_sf : sfixed_bus;
 
     -- Memory <-> Calc Interface
     signal mem_read_req   : std_logic;
@@ -60,6 +62,7 @@ architecture rtl of neural_network is
 begin
 
     weights_loaded <= calc_weights_loaded;
+    learning_rate_sf <= to_sfixed(learning_rate, INT_BITS - 1, -FRAC_BITS);
 
     u_control : entity work.control_unit
         port map (
@@ -113,7 +116,7 @@ begin
             done => calc_done,
             output_data => output_data,
             output_valid => output_valid,
-            learning_rate => learning_rate,
+            learning_rate => learning_rate_sf,
             mem_read_req => mem_read_req,
             mem_read_addr => mem_read_addr,
             mem_read_data => mem_read_data,

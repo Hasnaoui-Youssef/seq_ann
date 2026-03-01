@@ -171,6 +171,14 @@ class TrainingConfig:
 
 
 @dataclass
+class HardwareConfig:
+    """Hardware resource configuration."""
+    acc_size: int = 4     # Adder tree width per accumulator unit
+    num_accs: int = 2     # Number of accumulator units
+    num_mults: int = 8    # Number of multiplier units
+
+
+@dataclass
 class AcceleratorConfig:
     """Complete accelerator configuration."""
     precision: PrecisionConfig
@@ -178,6 +186,7 @@ class AcceleratorConfig:
     network: NetworkConfig
     parallelism: ParallelismConfig = field(default_factory=ParallelismConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
+    hardware: HardwareConfig = field(default_factory=HardwareConfig)
     training: Optional[TrainingConfig] = None
     
     @property
@@ -281,11 +290,20 @@ def _parse_config_dict(raw_config: dict) -> AcceleratorConfig:
             optimizer=training_dict.get("optimizer", "sgd")
         )
     
+    # Parse hardware resources (optional, with defaults)
+    hardware_dict = raw_config.get("hardware", {})
+    hardware = HardwareConfig(
+        acc_size=hardware_dict.get("acc_size", 4),
+        num_accs=hardware_dict.get("num_accs", 2),
+        num_mults=hardware_dict.get("num_mults", 8)
+    )
+    
     return AcceleratorConfig(
         precision=precision,
         sigmoid=sigmoid,
         parallelism=parallelism,
         memory=memory,
+        hardware=hardware,
         network=network,
         training=training
     )

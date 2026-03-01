@@ -9,30 +9,22 @@ use work.sigmoid_lut_pkg.all;
 
 entity activation_func is
     generic(
-        input_width : integer := 48  -- Width of accumulator output (varies by number of inputs)
+        input_int_bits : integer := 16  -- Integer bits of input (may differ from INT_BITS due to accumulator growth)
     );
     port(
-        input_i : in std_logic_vector(input_width - 1 downto 0);
+        input_i : in sfixed(input_int_bits - 1 downto -FRAC_BITS);
         output_o : out sfixed_bus  -- Output is always DATA_WIDTH (INT_BITS and FRAC_BITS)
     );
 end entity activation_func;
 
 architecture sigmoid of activation_func is
-    -- Input integer bits (derived from input width and frac width)
-    constant INPUT_INT_BITS : integer := input_width - FRAC_BITS;
-
-    -- Input as sfixed
-    signal input_sfixed : sfixed(INPUT_INT_BITS - 1 downto -FRAC_BITS);
 
     -- Index calculation signals
-    -- After MSB flip, extract bits for LUT index
     signal index_slice : sfixed(INDEX_HIGH downto INDEX_LOW);
     signal msb_flipped : std_logic;
     signal lut_index : unsigned(LUT_BITS - 1 downto 0);
 
 begin
-    -- Convert input to sfixed
-    input_sfixed <= to_sfixed(input_i, input_sfixed);
 
     ---------------------------------------------------------------------------
     -- Index Calculation via Resize + MSB Flip
@@ -52,7 +44,7 @@ begin
     -- 4. For sigmoid's smooth curve, the difference is negligible
     ---------------------------------------------------------------------------
     index_slice <= resize(
-        arg            => input_sfixed,
+        arg            => input_i,
         left_index     => INDEX_HIGH,
         right_index    => INDEX_LOW,
         overflow_style => fixed_saturate,
@@ -76,14 +68,10 @@ begin
 end architecture sigmoid;
 
 architecture relu of activation_func is
-    constant INPUT_INT_BITS : integer := input_width - FRAC_BITS;
-    signal input_sfixed : sfixed(INPUT_INT_BITS - 1 downto -FRAC_BITS);
     constant ZERO : sfixed_bus := to_sfixed(0.0, INT_BITS - 1, -FRAC_BITS);
 begin
-    input_sfixed <= to_sfixed(input_i, input_sfixed);
-
     -- ReLU: max(0, x) with saturating resize from accumulator width to data width
-    output_o <= ZERO when input_sfixed < 0 else
-                resize(input_sfixed, INT_BITS - 1, -FRAC_BITS,
+    output_o <= ZERO when input_i < 0 else
+                resize(input_i, INT_BITS - 1, -FRAC_BITS,
                        fixed_saturate, fixed_truncate);
 end architecture relu;

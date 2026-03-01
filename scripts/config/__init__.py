@@ -13,6 +13,7 @@ from .loader import (
     MemoryConfig,
     NetworkConfig,
     TrainingConfig,
+    HardwareConfig,
     DenseLayerConfig,
     Conv2DLayerConfig,
     MaxPoolLayerConfig,
@@ -41,6 +42,7 @@ __all__ = [
     "MemoryConfig",
     "NetworkConfig",
     "TrainingConfig",
+    "HardwareConfig",
     # Layer configs
     "DenseLayerConfig",
     "Conv2DLayerConfig",

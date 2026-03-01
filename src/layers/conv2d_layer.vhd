@@ -37,31 +37,31 @@ entity conv2d_layer is
 
         -- Forward Interface (flattened feature maps)
         fwd_ctrl_in  : in layer_control_t;
-        fwd_data_in  : in std_logic_bus_array(0 to C_IN * H_IN * W_IN - 1)(DATA_WIDTH - 1 downto 0);
+        fwd_data_in  : in sfixed_bus_array(0 to C_IN * H_IN * W_IN - 1);
         fwd_ctrl_out : out layer_control_t;
-        fwd_data_out : out std_logic_bus_array(0 to NUM_FILTERS * ((H_IN + 2*PAD_H - KERNEL_H)/STRIDE_H + 1) * ((W_IN + 2*PAD_W - KERNEL_W)/STRIDE_W + 1) - 1)(DATA_WIDTH - 1 downto 0);
+        fwd_data_out : out sfixed_bus_array(0 to NUM_FILTERS * ((H_IN + 2*PAD_H - KERNEL_H)/STRIDE_H + 1) * ((W_IN + 2*PAD_W - KERNEL_W)/STRIDE_W + 1) - 1);
 
         -- Backward Interface
         bwd_ctrl_in  : in layer_control_t;
-        bwd_error_in : in std_logic_bus_array(0 to NUM_FILTERS * ((H_IN + 2*PAD_H - KERNEL_H)/STRIDE_H + 1) * ((W_IN + 2*PAD_W - KERNEL_W)/STRIDE_W + 1) - 1)(DATA_WIDTH - 1 downto 0);
+        bwd_error_in : in sfixed_bus_array(0 to NUM_FILTERS * ((H_IN + 2*PAD_H - KERNEL_H)/STRIDE_H + 1) * ((W_IN + 2*PAD_W - KERNEL_W)/STRIDE_W + 1) - 1);
         bwd_ctrl_out : out layer_control_t;
-        bwd_error_out: out std_logic_bus_array(0 to C_IN * H_IN * W_IN - 1)(DATA_WIDTH - 1 downto 0);
+        bwd_error_out: out sfixed_bus_array(0 to C_IN * H_IN * W_IN - 1);
 
         -- Weight Bank Interface
         weight_load_en   : in  std_logic;
-        weight_load_data : in  std_logic_vector(DATA_WIDTH - 1 downto 0);
+        weight_load_data : in  sfixed_bus;
         weight_load_done : out std_logic;
         weight_save_en   : in  std_logic;
-        weight_save_data : out std_logic_vector(DATA_WIDTH - 1 downto 0);
+        weight_save_data : out sfixed_bus;
         weight_save_done : out std_logic;
 
         -- Gradient update
         weight_update_en   : in  std_logic;
-        weight_learn_rate  : in  std_logic_vector(DATA_WIDTH - 1 downto 0);
+        weight_learn_rate  : in  sfixed_bus;
         weight_update_done : out std_logic;
 
         -- Gradients output
-        grads_out : out std_logic_bus_array(0 to (KERNEL_H * KERNEL_W * C_IN + 1) * NUM_FILTERS - 1)(DATA_WIDTH - 1 downto 0)
+        grads_out : out sfixed_bus_array(0 to (KERNEL_H * KERNEL_W * C_IN + 1) * NUM_FILTERS - 1)
     );
 end entity conv2d_layer;
 
@@ -79,40 +79,31 @@ architecture rtl of conv2d_layer is
     constant NUM_WEIGHTS : integer := WEIGHTS_PER_FILTER * NUM_FILTERS;
 
     -- Weight storage
-    signal weights_internal : std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
-    signal grads_internal   : std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0)
+    signal weights_internal : sfixed_bus_array(0 to NUM_WEIGHTS - 1);
+    signal grads_internal   : sfixed_bus_array(0 to NUM_WEIGHTS - 1)
         := (others => (others => '0'));
 
     -- Stored inputs for backward pass
-    signal stored_input : std_logic_bus_array(0 to INPUT_SIZE - 1)(DATA_WIDTH - 1 downto 0)
+    signal stored_input : sfixed_bus_array(0 to INPUT_SIZE - 1)
         := (others => (others => '0'));
 
     -- Output registers
-    signal output_reg : std_logic_bus_array(0 to OUTPUT_SIZE - 1)(DATA_WIDTH - 1 downto 0)
+    signal output_reg : sfixed_bus_array(0 to OUTPUT_SIZE - 1)
         := (others => (others => '0'));
-
-    -- Fixed-point multiplication helper
-    function mult(a, b : std_logic_vector) return std_logic_vector is
-        variable res : sfixed_bus;
-    begin
-        res := resize(to_sfixed(a, INT_BITS - 1, -FRAC_BITS) *
-                      to_sfixed(b, INT_BITS - 1, -FRAC_BITS),
-                      INT_BITS - 1, -FRAC_BITS);
-        return to_std_logic_vector(res);
-    end function;
 
     -- Get padded input value (returns 0 for out-of-bounds)
     function get_padded_input(
-        data : std_logic_bus_array;
+        data : sfixed_bus_array;
         c, h, w : integer
-    ) return std_logic_vector is
+    ) return sfixed_bus is
         variable actual_h : integer;
         variable actual_w : integer;
+        constant ZERO : sfixed_bus := (others => '0');
     begin
         actual_h := h - PAD_H;
         actual_w := w - PAD_W;
         if actual_h < 0 or actual_h >= H_IN or actual_w < 0 or actual_w >= W_IN then
-            return (DATA_WIDTH - 1 downto 0 => '0');
+            return ZERO;
         else
             return data(c * H_IN * W_IN + actual_h * W_IN + actual_w);
         end if;
@@ -167,7 +158,7 @@ begin
             for oh in 0 to H_OUT - 1 loop
                 for ow in 0 to W_OUT - 1 loop
                     -- Start with bias
-                    acc := to_sfixed(weights_internal(w_base + KERNEL_SIZE), INT_BITS - 1, -FRAC_BITS);
+                    acc := weights_internal(w_base + KERNEL_SIZE);
 
                     -- Accumulate kernel dot product
                     for c in 0 to C_IN - 1 loop
@@ -175,19 +166,15 @@ begin
                             for kw in 0 to KERNEL_W - 1 loop
                                 in_h := oh * STRIDE_H + kh;
                                 in_w := ow * STRIDE_W + kw;
-                                in_val := to_sfixed(
-                                    get_padded_input(stored_input, c, in_h, in_w),
-                                    INT_BITS - 1, -FRAC_BITS);
-                                w_val := to_sfixed(
-                                    weights_internal(w_base + c * KERNEL_H * KERNEL_W + kh * KERNEL_W + kw),
-                                    INT_BITS - 1, -FRAC_BITS);
+                                in_val := get_padded_input(stored_input, c, in_h, in_w);
+                                w_val := weights_internal(w_base + c * KERNEL_H * KERNEL_W + kh * KERNEL_W + kw);
                                 prod := resize(in_val * w_val, INT_BITS - 1, -FRAC_BITS);
                                 acc := resize(acc + prod, INT_BITS - 1, -FRAC_BITS);
                             end loop;
                         end loop;
                     end loop;
 
-                    output_reg(f * H_OUT * W_OUT + oh * W_OUT + ow) <= to_std_logic_vector(acc);
+                    output_reg(f * H_OUT * W_OUT + oh * W_OUT + ow) <= acc;
                 end loop;
             end loop;
         end loop;
@@ -231,20 +218,16 @@ begin
                                 grad_w_acc := (others => '0');
                                 for oh in 0 to H_OUT - 1 loop
                                     for ow in 0 to W_OUT - 1 loop
-                                        delta_sf := to_sfixed(
-                                            bwd_error_in(f * H_OUT * W_OUT + oh * W_OUT + ow),
-                                            INT_BITS - 1, -FRAC_BITS);
+                                        delta_sf := bwd_error_in(f * H_OUT * W_OUT + oh * W_OUT + ow);
                                         in_h := oh * STRIDE_H + kh;
                                         in_w := ow * STRIDE_W + kw;
-                                        in_sf := to_sfixed(
-                                            get_padded_input(stored_input, c, in_h, in_w),
-                                            INT_BITS - 1, -FRAC_BITS);
+                                        in_sf := get_padded_input(stored_input, c, in_h, in_w);
                                         grad_w_acc := resize(grad_w_acc + resize(delta_sf * in_sf, INT_BITS - 1, -FRAC_BITS),
                                                             INT_BITS - 1, -FRAC_BITS);
                                     end loop;
                                 end loop;
                                 grads_internal(w_base + c * KERNEL_H * KERNEL_W + kh * KERNEL_W + kw)
-                                    <= to_std_logic_vector(grad_w_acc);
+                                    <= grad_w_acc;
                             end loop;
                         end loop;
                     end loop;
@@ -253,13 +236,11 @@ begin
                     grad_w_acc := (others => '0');
                     for oh in 0 to H_OUT - 1 loop
                         for ow in 0 to W_OUT - 1 loop
-                            delta_sf := to_sfixed(
-                                bwd_error_in(f * H_OUT * W_OUT + oh * W_OUT + ow),
-                                INT_BITS - 1, -FRAC_BITS);
+                            delta_sf := bwd_error_in(f * H_OUT * W_OUT + oh * W_OUT + ow);
                             grad_w_acc := resize(grad_w_acc + delta_sf, INT_BITS - 1, -FRAC_BITS);
                         end loop;
                     end loop;
-                    grads_internal(w_base + KERNEL_SIZE) <= to_std_logic_vector(grad_w_acc);
+                    grads_internal(w_base + KERNEL_SIZE) <= grad_w_acc;
                 end loop;
 
                 -- Compute input gradients: dL/dX[c,h,w] = sum over filters,kh,kw of delta * weight
@@ -277,19 +258,15 @@ begin
                                         if in_h >= 0 and in_h < H_OUT * STRIDE_H and
                                            in_w >= 0 and in_w < W_OUT * STRIDE_W and
                                            in_h mod STRIDE_H = 0 and in_w mod STRIDE_W = 0 then
-                                            delta_sf := to_sfixed(
-                                                bwd_error_in(f * H_OUT * W_OUT + (in_h/STRIDE_H) * W_OUT + in_w/STRIDE_W),
-                                                INT_BITS - 1, -FRAC_BITS);
-                                            w_sf := to_sfixed(
-                                                weights_internal(w_base + c * KERNEL_H * KERNEL_W + kh * KERNEL_W + kw),
-                                                INT_BITS - 1, -FRAC_BITS);
+                                            delta_sf := bwd_error_in(f * H_OUT * W_OUT + (in_h/STRIDE_H) * W_OUT + in_w/STRIDE_W);
+                                            w_sf := weights_internal(w_base + c * KERNEL_H * KERNEL_W + kh * KERNEL_W + kw);
                                             grad_acc := resize(grad_acc + resize(delta_sf * w_sf, INT_BITS - 1, -FRAC_BITS),
                                                               INT_BITS - 1, -FRAC_BITS);
                                         end if;
                                     end loop;
                                 end loop;
                             end loop;
-                            bwd_error_out(c * H_IN * W_IN + ih * W_IN + iw) <= to_std_logic_vector(grad_acc);
+                            bwd_error_out(c * H_IN * W_IN + ih * W_IN + iw) <= grad_acc;
                         end loop;
                     end loop;
                 end loop;

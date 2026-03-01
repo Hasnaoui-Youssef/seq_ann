@@ -30,22 +30,22 @@ entity weight_bank is
 
         -- Load interface (sequential, from memory)
         load_en   : in  std_logic;
-        load_data : in  std_logic_vector(DATA_WIDTH - 1 downto 0);
+        load_data : in  sfixed_bus;
         load_done : out std_logic;
         load_idx  : out integer range 0 to NUM_WEIGHTS - 1;
 
         -- Read interface (parallel, to compute units)
-        weights_o : out std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
+        weights_o : out sfixed_bus_array(0 to NUM_WEIGHTS - 1);
 
         -- Gradient update interface (training)
         update_en   : in  std_logic;
-        grad_data   : in  std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
-        learn_rate  : in  std_logic_vector(DATA_WIDTH - 1 downto 0);
+        grad_data   : in  sfixed_bus_array(0 to NUM_WEIGHTS - 1);
+        learn_rate  : in  sfixed_bus;
         update_done : out std_logic;
 
         -- Save interface (sequential, to memory)
         save_en   : in  std_logic;
-        save_data : out std_logic_vector(DATA_WIDTH - 1 downto 0);
+        save_data : out sfixed_bus;
         save_done : out std_logic;
         save_idx  : out integer range 0 to NUM_WEIGHTS - 1
     );
@@ -54,7 +54,7 @@ end entity weight_bank;
 architecture rtl of weight_bank is
 
     -- Weight storage registers
-    signal weight_regs : std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0)
+    signal weight_regs : sfixed_bus_array(0 to NUM_WEIGHTS - 1)
         := (others => (others => '0'));
 
     -- Load counter
@@ -70,27 +70,16 @@ architecture rtl of weight_bank is
 
     -- Helper function for weight update: w = w - lr * grad
     function apply_gradient(
-        w    : std_logic_vector;
-        grad : std_logic_vector;
-        lr   : std_logic_vector
-    ) return std_logic_vector is
-        variable w_sf   : sfixed_bus;
-        variable g_sf   : sfixed_bus;
-        variable lr_sf  : sfixed_bus;
+        w    : sfixed_bus;
+        grad : sfixed_bus;
+        lr   : sfixed_bus
+    ) return sfixed_bus is
         variable delta  : sfixed_bus;
         variable result : sfixed_bus;
     begin
-        w_sf  := to_sfixed(w, INT_BITS - 1, -FRAC_BITS);
-        g_sf  := to_sfixed(grad, INT_BITS - 1, -FRAC_BITS);
-        lr_sf := to_sfixed(lr, INT_BITS - 1, -FRAC_BITS);
-
-        -- delta = lr * grad
-        delta := resize(lr_sf * g_sf, INT_BITS - 1, -FRAC_BITS);
-
-        -- result = w - delta
-        result := resize(w_sf - delta, INT_BITS - 1, -FRAC_BITS);
-
-        return to_std_logic_vector(result);
+        delta := resize(lr * grad, INT_BITS - 1, -FRAC_BITS);
+        result := resize(w - delta, INT_BITS - 1, -FRAC_BITS);
+        return result;
     end function;
 
 begin

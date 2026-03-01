@@ -18,14 +18,14 @@ entity flatten_layer is
         rst : in std_logic;
 
         fwd_ctrl_in  : in layer_control_t;
-        fwd_data_in  : in std_logic_bus_array(0 to TOTAL_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        fwd_data_in  : in sfixed_bus_array(0 to TOTAL_SIZE - 1);
         fwd_ctrl_out : out layer_control_t;
-        fwd_data_out : out std_logic_bus_array(0 to TOTAL_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        fwd_data_out : out sfixed_bus_array(0 to TOTAL_SIZE - 1);
 
         bwd_ctrl_in  : in layer_control_t;
-        bwd_error_in : in std_logic_bus_array(0 to TOTAL_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        bwd_error_in : in sfixed_bus_array(0 to TOTAL_SIZE - 1);
         bwd_ctrl_out : out layer_control_t;
-        bwd_error_out: out std_logic_bus_array(0 to TOTAL_SIZE - 1)(DATA_WIDTH - 1 downto 0)
+        bwd_error_out: out sfixed_bus_array(0 to TOTAL_SIZE - 1)
     );
 end entity flatten_layer;
 

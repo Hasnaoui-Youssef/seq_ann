@@ -21,34 +21,34 @@ entity layer is
 
         -- Forward Interface
         fwd_ctrl_in  : in layer_control_t;
-        fwd_data_in  : in std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
+        fwd_data_in  : in sfixed_bus_array(0 to NUM_INPUTS - 1);
 
         fwd_ctrl_out : out layer_control_t;
-        fwd_data_out : out std_logic_bus_array(0 to LAYER_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        fwd_data_out : out sfixed_bus_array(0 to LAYER_SIZE - 1);
 
         -- Backward Interface
         bwd_ctrl_in  : in layer_control_t;
-        bwd_error_in : in std_logic_bus_array(0 to LAYER_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+        bwd_error_in : in sfixed_bus_array(0 to LAYER_SIZE - 1);
 
         bwd_ctrl_out : out layer_control_t;
-        bwd_error_out: out std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
+        bwd_error_out: out sfixed_bus_array(0 to NUM_INPUTS - 1);
 
-        -- Weight Bank Interface (instead of direct weights_in)
+        -- Weight Bank Interface
         weight_load_en   : in  std_logic;
-        weight_load_data : in  std_logic_vector(DATA_WIDTH - 1 downto 0);
+        weight_load_data : in  sfixed_bus;
         weight_load_done : out std_logic;
 
         weight_save_en   : in  std_logic;
-        weight_save_data : out std_logic_vector(DATA_WIDTH - 1 downto 0);
+        weight_save_data : out sfixed_bus;
         weight_save_done : out std_logic;
 
         -- Gradient update (training)
         weight_update_en   : in  std_logic;
-        weight_learn_rate  : in  std_logic_vector(DATA_WIDTH - 1 downto 0);
+        weight_learn_rate  : in  sfixed_bus;
         weight_update_done : out std_logic;
 
-        -- Gradients Output (for external use if needed)
-        grads_out : out std_logic_bus_array(0 to (NUM_INPUTS + 1) * LAYER_SIZE - 1)(DATA_WIDTH - 1 downto 0)
+        -- Gradients Output
+        grads_out : out sfixed_bus_array(0 to (NUM_INPUTS + 1) * LAYER_SIZE - 1)
     );
 end entity layer;
 
@@ -56,24 +56,22 @@ architecture rtl of layer is
 
     constant NUM_WEIGHTS : integer := (NUM_INPUTS + 1) * LAYER_SIZE;
 
-    signal neuron_outputs : std_logic_bus_array(0 to LAYER_SIZE - 1)(DATA_WIDTH - 1 downto 0);
+    signal neuron_outputs : sfixed_bus_array(0 to LAYER_SIZE - 1);
 
-    signal weights_internal : std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
+    signal weights_internal : sfixed_bus_array(0 to NUM_WEIGHTS - 1);
 
-    signal grads_internal : std_logic_bus_array(0 to NUM_WEIGHTS - 1)(DATA_WIDTH - 1 downto 0);
+    signal grads_internal : sfixed_bus_array(0 to NUM_WEIGHTS - 1);
 
-    type input_grad_array is array (0 to LAYER_SIZE - 1) of std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
+    type input_grad_array is array (0 to LAYER_SIZE - 1) of sfixed_bus_array(0 to NUM_INPUTS - 1);
     signal input_grads : input_grad_array;
 
-    function sum_input_grads(input_idx : integer; grads : input_grad_array) return std_logic_vector is
+    function sum_input_grads(input_idx : integer; grads : input_grad_array) return sfixed_bus is
         variable sum : sfixed_bus := (others => '0');
-        variable val : sfixed_bus;
     begin
         for i in 0 to LAYER_SIZE - 1 loop
-            val := to_sfixed(grads(i)(input_idx), val);
-            sum := resize(sum + val, sum);
+            sum := resize(sum + grads(i)(input_idx), sum);
         end loop;
-        return to_std_logic_vector(sum);
+        return sum;
     end function;
 
 begin
@@ -121,11 +119,11 @@ begin
     gen_neurons: for i in 0 to LAYER_SIZE - 1 generate
         constant w_start : integer := i * (NUM_INPUTS + 1);
 
-        signal n_weights : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
-        signal n_bias    : std_logic_vector(DATA_WIDTH - 1 downto 0);
+        signal n_weights : sfixed_bus_array(0 to NUM_INPUTS - 1);
+        signal n_bias    : sfixed_bus;
 
-        signal n_grad_weights : std_logic_bus_array(0 to NUM_INPUTS - 1)(DATA_WIDTH - 1 downto 0);
-        signal n_grad_bias    : std_logic_vector(DATA_WIDTH - 1 downto 0);
+        signal n_grad_weights : sfixed_bus_array(0 to NUM_INPUTS - 1);
+        signal n_grad_bias    : sfixed_bus;
 
     begin
         assign_w: for j in 0 to NUM_INPUTS - 1 generate

@@ -9,6 +9,11 @@ sigmoid:
   lut_bits: 8     # 256 entries (2^8)
   range_bits: 3   # [-8, 8)
 
+hardware:
+  acc_size: 4     # Adder tree width per accumulator unit
+  num_accs: 2     # Number of accumulator units
+  num_mults: 8    # Number of multiplier units
+
 network:
   name: xor_network
   layers:

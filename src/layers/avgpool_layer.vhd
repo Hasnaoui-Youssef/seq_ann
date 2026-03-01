@@ -25,14 +25,14 @@ entity avgpool_layer is
         rst : in std_logic;
 
         fwd_ctrl_in  : in layer_control_t;
-        fwd_data_in  : in std_logic_bus_array(0 to C * H_IN * W_IN - 1)(DATA_WIDTH - 1 downto 0);
+        fwd_data_in  : in sfixed_bus_array(0 to C * H_IN * W_IN - 1);
         fwd_ctrl_out : out layer_control_t;
-        fwd_data_out : out std_logic_bus_array(0 to C * ((H_IN - POOL_H)/STRIDE_H + 1) * ((W_IN - POOL_W)/STRIDE_W + 1) - 1)(DATA_WIDTH - 1 downto 0);
+        fwd_data_out : out sfixed_bus_array(0 to C * ((H_IN - POOL_H)/STRIDE_H + 1) * ((W_IN - POOL_W)/STRIDE_W + 1) - 1);
 
         bwd_ctrl_in  : in layer_control_t;
-        bwd_error_in : in std_logic_bus_array(0 to C * ((H_IN - POOL_H)/STRIDE_H + 1) * ((W_IN - POOL_W)/STRIDE_W + 1) - 1)(DATA_WIDTH - 1 downto 0);
+        bwd_error_in : in sfixed_bus_array(0 to C * ((H_IN - POOL_H)/STRIDE_H + 1) * ((W_IN - POOL_W)/STRIDE_W + 1) - 1);
         bwd_ctrl_out : out layer_control_t;
-        bwd_error_out: out std_logic_bus_array(0 to C * H_IN * W_IN - 1)(DATA_WIDTH - 1 downto 0)
+        bwd_error_out: out sfixed_bus_array(0 to C * H_IN * W_IN - 1)
     );
 end entity avgpool_layer;
 
@@ -43,7 +43,7 @@ architecture rtl of avgpool_layer is
     constant POOL_SIZE : integer := POOL_H * POOL_W;
     constant OUTPUT_SIZE : integer := C * H_OUT * W_OUT;
 
-    signal output_reg : std_logic_bus_array(0 to OUTPUT_SIZE - 1)(DATA_WIDTH - 1 downto 0)
+    signal output_reg : sfixed_bus_array(0 to OUTPUT_SIZE - 1)
         := (others => (others => '0'));
 
     -- Precompute 1/pool_size as fixed-point
@@ -82,12 +82,12 @@ begin
                             in_idx := ch * H_IN * W_IN +
                                       (oh * STRIDE_H + ph) * W_IN +
                                       (ow * STRIDE_W + pw);
-                            acc := resize(acc + to_sfixed(fwd_data_in(in_idx), INT_BITS - 1, -FRAC_BITS),
+                            acc := resize(acc + fwd_data_in(in_idx),
                                          INT_BITS - 1, -FRAC_BITS);
                         end loop;
                     end loop;
                     output_reg(ch * H_OUT * W_OUT + oh * W_OUT + ow) <=
-                        to_std_logic_vector(resize(acc * INV_POOL, INT_BITS - 1, -FRAC_BITS));
+                        resize(acc * INV_POOL, INT_BITS - 1, -FRAC_BITS);
                 end loop;
             end loop;
         end loop;
@@ -107,16 +107,14 @@ begin
                 for ch in 0 to C - 1 loop
                     for oh in 0 to H_OUT - 1 loop
                         for ow in 0 to W_OUT - 1 loop
-                            grad_sf := to_sfixed(
-                                bwd_error_in(ch * H_OUT * W_OUT + oh * W_OUT + ow),
-                                INT_BITS - 1, -FRAC_BITS);
+                            grad_sf := bwd_error_in(ch * H_OUT * W_OUT + oh * W_OUT + ow);
                             distributed := resize(grad_sf * INV_POOL, INT_BITS - 1, -FRAC_BITS);
                             for ph in 0 to POOL_H - 1 loop
                                 for pw in 0 to POOL_W - 1 loop
                                     in_idx := ch * H_IN * W_IN +
                                               (oh * STRIDE_H + ph) * W_IN +
                                               (ow * STRIDE_W + pw);
-                                    bwd_error_out(in_idx) <= to_std_logic_vector(distributed);
+                                    bwd_error_out(in_idx) <= distributed;
                                 end loop;
                             end loop;
                         end loop;

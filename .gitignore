@@ -37,3 +37,4 @@ data/*.hex
 data/*.onnx
 sim_build/
 results.xml
+sim.log
